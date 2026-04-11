@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Satisfactory Floor Planner</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="app">
+    <aside id="sidebar">
+      <h1>Satisfactory Floor Planner</h1>
+      <p class="subhead">Rough 2D factory layout planning tool.</p>
+
+      <section class="panel">
+        <h2>Place Machine</h2>
+        <button id="addSmelterBtn">Add Smelter</button>
+      </section>
+
+      <section class="panel">
+        <h2>Controls</h2>
+        <ul>
+          <li>Mouse wheel: Zoom</li>
+          <li>Middle mouse drag: Pan</li>
+          <li>Left drag: Move machine</li>
+          <li>R: Rotate selected machine</li>
+        </ul>
+      </section>
+
+      <section class="panel">
+        <h2>Selected</h2>
+        <div id="selectedInfo">None</div>
+      </section>
+    </aside>
+
+    <main id="workspace">
+      <canvas id="plannerCanvas"></canvas>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
