@@ -31,7 +31,9 @@ body {
 
 #sidebar h1 {
   margin-top: 0;
-  font-size: 1.5rem;
+  margin-bottom: 8px;
+  font-size: 1.45rem;
+  line-height: 1.15;
 }
 
 .subhead {
@@ -52,19 +54,40 @@ body {
   font-size: 1rem;
 }
 
-button {
-  width: 100%;
-  padding: 12px;
-  border: none;
-  border-radius: 8px;
-  background: #2f81f7;
-  color: white;
-  font-size: 0.95rem;
-  cursor: pointer;
+.machine-palette {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
 }
 
-button:hover {
-  background: #1f6feb;
+.machine-btn {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #2d333b;
+  border-radius: 8px;
+  background: #1b2430;
+  color: #e6edf3;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.machine-btn:hover {
+  background: #243041;
+  border-color: #3d4c60;
+}
+
+.machine-btn .machine-name {
+  display: block;
+  font-size: 0.95rem;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.machine-btn .machine-size {
+  display: block;
+  font-size: 0.82rem;
+  color: #9da7b3;
 }
 
 ul {

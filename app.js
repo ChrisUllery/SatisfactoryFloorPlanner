@@ -1,34 +1,33 @@
 const canvas = document.getElementById("plannerCanvas");
 const ctx = canvas.getContext("2d");
 
-const addSmelterBtn = document.getElementById("addSmelterBtn");
+const machinePalette = document.getElementById("machinePalette");
 const selectedInfo = document.getElementById("selectedInfo");
 
-const FOUNDATION_SIZE = 8;      // 8m x 8m
-const SNAP_SIZE = 0.5;          // half-meter snap
+const FOUNDATION_SIZE = 8;
+const SNAP_SIZE = 0.5;
 const MIN_ZOOM = 4;
 const MAX_ZOOM = 80;
 
-const machineCatalog = {
-  Smelter: {
-    name: "Smelter",
-    width: 9,
-    height: 6,
-    color: "#7a8da1"
-  }
-};
+const machineCatalog = [
+  { name: "Smelter", width: 9, height: 6, color: "#7a8da1" },
+  { name: "Constructor", width: 8, height: 6, color: "#6f9b7d" },
+  { name: "Assembler", width: 10, height: 15, color: "#9b7f6f" },
+  { name: "Foundry", width: 10, height: 9, color: "#8b6f9b" },
+  { name: "Manufacturer", width: 18, height: 19, color: "#a18f73" },
+  { name: "Refinery", width: 10, height: 20, color: "#6f8f9f" }
+];
 
 const state = {
   camera: {
     x: 0,
     y: 0,
-    zoom: 20 // pixels per meter
+    zoom: 20
   },
   machines: [],
   selectedMachineId: null,
-  dragMode: null, // "pan" | "machine" | null
+  dragMode: null,
   dragStartScreen: { x: 0, y: 0 },
-  dragStartWorld: { x: 0, y: 0 },
   machineDragOffset: { x: 0, y: 0 }
 };
 
@@ -66,23 +65,40 @@ function snapPosition(x, y) {
   };
 }
 
+function getMachineDefinition(type) {
+  return machineCatalog.find(machine => machine.name === type) || null;
+}
+
 function getMachineById(id) {
-  return state.machines.find(m => m.id === id) || null;
+  return state.machines.find(machine => machine.id === id) || null;
 }
 
 function getSelectedMachine() {
   return getMachineById(state.selectedMachineId);
 }
 
+function getMachineFootprint(machine) {
+  const rotated = machine.rotation % 180 !== 0;
+  return {
+    width: rotated ? machine.height : machine.width,
+    height: rotated ? machine.width : machine.height
+  };
+}
+
 function updateSelectedInfo() {
   const machine = getSelectedMachine();
+
   if (!machine) {
     selectedInfo.textContent = "None";
     return;
   }
 
+  const footprint = getMachineFootprint(machine);
+
   selectedInfo.innerHTML = `
     <strong>${machine.type}</strong><br>
+    Width: ${footprint.width} m<br>
+    Length: ${footprint.height} m<br>
     X: ${machine.x.toFixed(1)} m<br>
     Y: ${machine.y.toFixed(1)} m<br>
     Rotation: ${machine.rotation}°
@@ -90,11 +106,14 @@ function updateSelectedInfo() {
 }
 
 function createMachine(type, x, y) {
-  const def = machineCatalog[type];
-  const id = crypto.randomUUID();
+  const def = getMachineDefinition(type);
+
+  if (!def) {
+    throw new Error(`Unknown machine type: ${type}`);
+  }
 
   return {
-    id,
+    id: crypto.randomUUID(),
     type: def.name,
     x,
     y,
@@ -105,12 +124,37 @@ function createMachine(type, x, y) {
   };
 }
 
-function getMachineFootprint(machine) {
-  const rotated = machine.rotation % 180 !== 0;
-  return {
-    width: rotated ? machine.height : machine.width,
-    height: rotated ? machine.width : machine.height
-  };
+function placeMachine(type) {
+  const rect = canvas.getBoundingClientRect();
+  const centerWorld = screenToWorld(rect.width / 2, rect.height / 2);
+  const snapped = snapPosition(centerWorld.x, centerWorld.y);
+
+  const machine = createMachine(type, snapped.x, snapped.y);
+  state.machines.push(machine);
+  state.selectedMachineId = machine.id;
+
+  updateSelectedInfo();
+  draw();
+}
+
+function renderMachinePalette() {
+  machinePalette.innerHTML = "";
+
+  for (const machine of machineCatalog) {
+    const button = document.createElement("button");
+    button.className = "machine-btn";
+    button.type = "button";
+    button.innerHTML = `
+      <span class="machine-name">${machine.name}</span>
+      <span class="machine-size">${machine.width}m × ${machine.height}m</span>
+    `;
+
+    button.addEventListener("click", () => {
+      placeMachine(machine.name);
+    });
+
+    machinePalette.appendChild(button);
+  }
 }
 
 function drawGrid() {
@@ -131,9 +175,9 @@ function drawGrid() {
 
   ctx.lineWidth = 1;
 
-  // Minor snap grid
   if (state.camera.zoom >= 12) {
     ctx.strokeStyle = "#16202a";
+
     for (let x = startXMinor; x <= endXMinor; x += minorStep) {
       const sx = worldToScreen(x, 0).x;
       ctx.beginPath();
@@ -151,13 +195,13 @@ function drawGrid() {
     }
   }
 
-  // Foundation grid
   const startXFoundation = Math.floor(topLeft.x / foundationStep) * foundationStep;
   const endXFoundation = Math.ceil(bottomRight.x / foundationStep) * foundationStep;
   const startYFoundation = Math.floor(topLeft.y / foundationStep) * foundationStep;
   const endYFoundation = Math.ceil(bottomRight.y / foundationStep) * foundationStep;
 
   ctx.strokeStyle = "#2a3947";
+
   for (let x = startXFoundation; x <= endXFoundation; x += foundationStep) {
     const sx = worldToScreen(x, 0).x;
     ctx.beginPath();
@@ -197,15 +241,15 @@ function drawMachines() {
     const footprint = getMachineFootprint(machine);
     const screenPos = worldToScreen(machine.x, machine.y);
 
-    const w = footprint.width * state.camera.zoom;
-    const h = footprint.height * state.camera.zoom;
+    const widthPx = footprint.width * state.camera.zoom;
+    const heightPx = footprint.height * state.camera.zoom;
 
     ctx.fillStyle = machine.color;
-    ctx.fillRect(screenPos.x, screenPos.y, w, h);
+    ctx.fillRect(screenPos.x, screenPos.y, widthPx, heightPx);
 
     ctx.strokeStyle = machine.id === state.selectedMachineId ? "#ffd866" : "#0b0f14";
     ctx.lineWidth = machine.id === state.selectedMachineId ? 3 : 1.5;
-    ctx.strokeRect(screenPos.x, screenPos.y, w, h);
+    ctx.strokeRect(screenPos.x, screenPos.y, widthPx, heightPx);
 
     ctx.fillStyle = "#0b0f14";
     ctx.font = "12px Arial";
@@ -229,12 +273,13 @@ function hitTestMachine(screenX, screenY) {
     const machine = state.machines[i];
     const footprint = getMachineFootprint(machine);
 
-    if (
+    const inside =
       world.x >= machine.x &&
       world.x <= machine.x + footprint.width &&
       world.y >= machine.y &&
-      world.y <= machine.y + footprint.height
-    ) {
+      world.y <= machine.y + footprint.height;
+
+    if (inside) {
       return machine;
     }
   }
@@ -242,40 +287,32 @@ function hitTestMachine(screenX, screenY) {
   return null;
 }
 
-addSmelterBtn.addEventListener("click", () => {
-  const rect = canvas.getBoundingClientRect();
-  const centerWorld = screenToWorld(rect.width / 2, rect.height / 2);
-  const snapped = snapPosition(centerWorld.x, centerWorld.y);
+canvas.addEventListener(
+  "wheel",
+  event => {
+    event.preventDefault();
 
-  const machine = createMachine("Smelter", snapped.x, snapped.y);
-  state.machines.push(machine);
-  state.selectedMachineId = machine.id;
-  updateSelectedInfo();
-  draw();
-});
+    const rect = canvas.getBoundingClientRect();
+    const mouseX = event.clientX - rect.left;
+    const mouseY = event.clientY - rect.top;
 
-canvas.addEventListener("wheel", (event) => {
-  event.preventDefault();
+    const beforeZoom = screenToWorld(mouseX, mouseY);
 
-  const rect = canvas.getBoundingClientRect();
-  const mouseX = event.clientX - rect.left;
-  const mouseY = event.clientY - rect.top;
+    const zoomFactor = event.deltaY < 0 ? 1.1 : 0.9;
+    state.camera.zoom *= zoomFactor;
+    state.camera.zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, state.camera.zoom));
 
-  const beforeZoom = screenToWorld(mouseX, mouseY);
+    const afterZoom = screenToWorld(mouseX, mouseY);
 
-  const zoomFactor = event.deltaY < 0 ? 1.1 : 0.9;
-  state.camera.zoom *= zoomFactor;
-  state.camera.zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, state.camera.zoom));
+    state.camera.x += (afterZoom.x - beforeZoom.x) * state.camera.zoom;
+    state.camera.y += (afterZoom.y - beforeZoom.y) * state.camera.zoom;
 
-  const afterZoom = screenToWorld(mouseX, mouseY);
+    draw();
+  },
+  { passive: false }
+);
 
-  state.camera.x += (afterZoom.x - beforeZoom.x) * state.camera.zoom;
-  state.camera.y += (afterZoom.y - beforeZoom.y) * state.camera.zoom;
-
-  draw();
-}, { passive: false });
-
-canvas.addEventListener("mousedown", (event) => {
+canvas.addEventListener("mousedown", event => {
   const rect = canvas.getBoundingClientRect();
   const mouseX = event.clientX - rect.left;
   const mouseY = event.clientY - rect.top;
@@ -311,7 +348,7 @@ canvas.addEventListener("mousedown", (event) => {
   }
 });
 
-canvas.addEventListener("mousemove", (event) => {
+canvas.addEventListener("mousemove", event => {
   const rect = canvas.getBoundingClientRect();
   const mouseX = event.clientX - rect.left;
   const mouseY = event.clientY - rect.top;
@@ -350,12 +387,21 @@ window.addEventListener("mouseup", () => {
   state.dragMode = null;
 });
 
-window.addEventListener("keydown", (event) => {
-  if (event.key.toLowerCase() === "r") {
-    const machine = getSelectedMachine();
-    if (!machine) return;
+window.addEventListener("keydown", event => {
+  const machine = getSelectedMachine();
 
+  if (!machine) return;
+
+  if (event.key.toLowerCase() === "r") {
     machine.rotation = (machine.rotation + 90) % 360;
+    updateSelectedInfo();
+    draw();
+    return;
+  }
+
+  if (event.key === "Delete" || event.key === "Backspace") {
+    state.machines = state.machines.filter(item => item.id !== machine.id);
+    state.selectedMachineId = null;
     updateSelectedInfo();
     draw();
   }
@@ -363,5 +409,6 @@ window.addEventListener("keydown", (event) => {
 
 window.addEventListener("resize", resizeCanvas);
 
+renderMachinePalette();
 resizeCanvas();
 updateSelectedInfo();
