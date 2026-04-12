@@ -1,0 +1,57 @@
+{
+  "Assembler": {
+    "width": 10,
+    "length": 15,
+    "color": "#9b7f6f"
+  },
+  "Blender": {
+    "width": 18,
+    "length": 16,
+    "color": "#8fa17a"
+  },
+  "Constructor": {
+    "width": 7.9,
+    "length": 9.9,
+    "color": "#6f9b7d"
+  },
+  "Converter": {
+    "width": 16,
+    "length": 16,
+    "color": "#7f8fb0"
+  },
+  "Foundry": {
+    "width": 10,
+    "length": 9,
+    "color": "#8b6f9b"
+  },
+  "Manufacturer": {
+    "width": 18,
+    "length": 20,
+    "color": "#a18f73"
+  },
+  "Packager": {
+    "width": 8,
+    "length": 8,
+    "color": "#6f8f9a"
+  },
+  "Particle Accelerator": {
+    "width": 24,
+    "length": 38,
+    "color": "#a06f8f"
+  },
+  "Quantum Encoder": {
+    "width": 22,
+    "length": 48,
+    "color": "#6f7fa8"
+  },
+  "Refinery": {
+    "width": 10,
+    "length": 20,
+    "color": "#6f8f9f"
+  },
+  "Smelter": {
+    "width": 5,
+    "length": 9,
+    "color": "#7a8da1"
+  }
+}
