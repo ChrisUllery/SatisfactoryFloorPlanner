@@ -103,7 +103,8 @@ li {
 #workspace {
   position: relative;
   flex: 1;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
   background: #0b0f14;
 }
 
@@ -144,4 +145,44 @@ li {
 .machine-picker button:hover {
   background: #243041;
   border-color: #3d4c60;
+}
+#summaryView {
+  min-height: 100%;
+}
+
+.summary-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.summary-card {
+  background: #1b2430;
+  border: 1px solid #2d333b;
+  border-radius: 10px;
+  padding: 14px;
+}
+
+.summary-card .label {
+  color: #9da7b3;
+  font-size: 0.9rem;
+  margin-bottom: 8px;
+}
+
+.summary-card .value {
+  font-size: 1.6rem;
+  font-weight: 700;
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+#summaryPreviewCanvas {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  border: 1px solid #2d333b;
+  border-radius: 8px;
+  background: #0c1117;
 }
