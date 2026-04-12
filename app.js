@@ -277,12 +277,17 @@ function buildRecipeSummaryFromSfmd(sfmd, gameData, gap = 1) {
   const solvedNodes = solveFactory(sfmd, gameData);
   const grouped = new Map();
   const depths = computeNodeDepths(solvedNodes);
+  const EXCLUDED_MACHINES = ["Miner", "Water Extractor", "Resource Well Extractor", "Oil Extractor"];
 
   for (const nodeState of solvedNodes) {
     if (!nodeState.recipe || nodeState.machineCountExact <= 0) continue;
 
-    const recipeName = nodeState.recipe.Name;
     const machineName = getMainMachineName(nodeState.recipe);
+    if (EXCLUDED_MACHINES.includes(machineName)) {
+      continue;
+    }
+
+    const recipeName = nodeState.recipe.Name;
     const nodeDepth = depths[nodeState.index] ?? 0;
 
     if (!grouped.has(recipeName)) {
