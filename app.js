@@ -1026,7 +1026,7 @@ canvas.addEventListener("mousemove", event => {
           const aRects = getMachineOccupiedRects(a.machine, a.x, a.y, a.machine.rotation);
           const bRects = getMachineOccupiedRects(b.machine, b.x, b.y, b.machine.rotation);
 
-          if (rectanglesOverlap(aRects, bRects)) {
+          if (rectSetsOverlap(aRects, bRects)) {
             return null;
           }
         }
