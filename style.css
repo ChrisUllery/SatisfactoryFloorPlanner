@@ -113,3 +113,35 @@ li {
   height: 100%;
   cursor: default;
 }
+
+.machine-picker {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+.machine-picker select,
+.machine-picker button {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #2d333b;
+  border-radius: 8px;
+  background: #1b2430;
+  color: #e6edf3;
+  font-size: 0.95rem;
+}
+
+.machine-picker select {
+  cursor: pointer;
+}
+
+.machine-picker button {
+  cursor: pointer;
+  text-align: center;
+}
+
+.machine-picker select:hover,
+.machine-picker button:hover {
+  background: #243041;
+  border-color: #3d4c60;
+}

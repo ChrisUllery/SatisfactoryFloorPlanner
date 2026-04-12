@@ -365,22 +365,6 @@ addMachineBtn.addEventListener("click", () => {
   placeMachine(selectedType);
 });
 
-  for (const [name, machine] of Object.entries(machineCatalog)) {
-    const button = document.createElement("button");
-    button.className = "machine-btn";
-    button.type = "button";
-    button.innerHTML = `
-      <span class="machine-name">${name}</span>
-      <span class="machine-size">${machine.width}m × ${machine.length}m</span>
-    `;
-
-    button.addEventListener("click", () => {
-      placeMachine(name);
-    });
-
-    machinePalette.appendChild(button);
-  }
-}
 
 function drawGrid() {
   const rect = canvas.getBoundingClientRect();
