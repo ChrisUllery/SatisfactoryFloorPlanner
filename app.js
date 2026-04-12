@@ -1,7 +1,8 @@
 const canvas = document.getElementById("plannerCanvas");
 const ctx = canvas.getContext("2d");
 
-const machinePalette = document.getElementById("machinePalette");
+const machineSelect = document.getElementById("machineSelect");
+const addMachineBtn = document.getElementById("addMachineBtn");
 const selectedInfo = document.getElementById("selectedInfo");
 
 const FOUNDATION_SIZE = 8;
@@ -338,7 +339,31 @@ function placeMachine(type) {
 }
 
 function renderMachinePalette() {
-  machinePalette.innerHTML = "";
+  machineSelect.innerHTML = "";
+
+  const placeholder = document.createElement("option");
+  placeholder.value = "";
+  placeholder.textContent = "Select a machine...";
+  placeholder.disabled = true;
+  placeholder.selected = true;
+  machineSelect.appendChild(placeholder);
+
+  const machineNames = Object.keys(machineCatalog).sort((a, b) => a.localeCompare(b));
+
+  for (const name of machineNames) {
+    const machine = machineCatalog[name];
+    const option = document.createElement("option");
+    option.value = name;
+    option.textContent = `${name} (${machine.width}m × ${machine.length}m)`;
+    machineSelect.appendChild(option);
+  }
+}
+
+addMachineBtn.addEventListener("click", () => {
+  const selectedType = machineSelect.value;
+  if (!selectedType) return;
+  placeMachine(selectedType);
+});
 
   for (const [name, machine] of Object.entries(machineCatalog)) {
     const button = document.createElement("button");
@@ -1105,7 +1130,6 @@ window.addEventListener("keydown", event => {
 window.addEventListener("resize", resizeCanvas);
 
 loadMachineCatalog().then(() => {
-  console.log(machineCatalog); // <-- ADD THIS
   renderMachinePalette();
   resizeCanvas();
   updateSelectedInfo();
