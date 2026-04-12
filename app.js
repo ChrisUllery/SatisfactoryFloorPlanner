@@ -2,6 +2,7 @@ const canvas = document.getElementById("plannerCanvas");
 const ctx = canvas.getContext("2d");
 
 const machineSelect = document.getElementById("machineSelect");
+const recipeSearch = document.getElementById("recipeSearch");
 const addMachineBtn = document.getElementById("addMachineBtn");
 const plannerViewBtn = document.getElementById("plannerViewBtn");
 const summaryViewBtn = document.getElementById("summaryViewBtn");
@@ -697,8 +698,9 @@ function updateSelectedInfo() {
 
   if (machine.blockId || machine.recipeName) {
     selectedInfo.innerHTML = `
-      <strong>${machine.type}</strong><br>
-      Recipe: ${machine.recipeName || "—"}<br>
+      <strong>${machine.recipeName || machine.type}</strong><br>
+      ${machine.type}<br><br>
+
       Block Machine Type: ${machine.blockMachineType || machine.type}<br>
       Block ID: ${machine.blockId || "—"}<br>
       Block Index: ${machine.blockIndex ?? "—"}<br>
@@ -767,31 +769,57 @@ function placeMachine(type) {
   draw();
 }
 
-function renderMachinePalette() {
+async function renderRecipePalette(filterText = "") {
+  const data = await loadGameData();
+
   machineSelect.innerHTML = "";
 
   const placeholder = document.createElement("option");
   placeholder.value = "";
-  placeholder.textContent = "Select a machine...";
+  placeholder.textContent = "Select a recipe...";
   placeholder.disabled = true;
   placeholder.selected = true;
   machineSelect.appendChild(placeholder);
 
-  const machineNames = Object.keys(machineCatalog).sort((a, b) => a.localeCompare(b));
+  const search = filterText.trim().toLowerCase();
 
-  for (const name of machineNames) {
-    const machine = machineCatalog[name];
+  const recipes = (data.Recipes || [])
+    .filter(r => r.Name && r.Machine)
+    .filter(r => {
+      if (!search) return true;
+      return (
+        r.Name.toLowerCase().includes(search) ||
+        r.Machine.toLowerCase().includes(search)
+      );
+    })
+    .sort((a, b) => a.Name.localeCompare(b.Name));
+
+  for (const recipe of recipes) {
     const option = document.createElement("option");
-    option.value = name;
-    option.textContent = `${name} (${machine.width}m × ${machine.length}m)`;
+    option.value = recipe.Name;
+    option.textContent = `${recipe.Name} (${recipe.Machine})`;
     machineSelect.appendChild(option);
   }
 }
 
-addMachineBtn.addEventListener("click", () => {
-  const selectedType = machineSelect.value;
-  if (!selectedType) return;
-  placeMachine(selectedType);
+recipeSearch.addEventListener("input", () => {
+  renderRecipePalette(recipeSearch.value);
+});
+
+
+addMachineBtn.addEventListener("click", async () => {
+  const selectedRecipeName = machineSelect.value;
+  if (!selectedRecipeName) return;
+
+  const data = await loadGameData();
+  const recipe = data.Recipes.find(r => r.Name === selectedRecipeName);
+
+  if (!recipe) {
+    alert("Recipe not found");
+    return;
+  }
+
+  placeMachineFromRecipe(recipe);
 });
 
 plannerViewBtn.addEventListener("click", () => {
@@ -828,6 +856,44 @@ function normalizeImportedRows(payload) {
   }
 
   throw new Error("Imported JSON does not contain a rows array.");
+}
+
+function placeMachineFromRecipe(recipe) {
+  const machineType = recipe.Machine;
+
+  const def = getMachineDefinition(machineType);
+  if (!def) {
+    alert(`No machine definition for ${machineType}`);
+    return;
+  }
+
+  const rect = canvas.getBoundingClientRect();
+  const centerWorld = screenToWorld(rect.width / 2, rect.height / 2);
+
+  const machine = {
+    id: crypto.randomUUID(),
+    type: machineType,
+    recipeName: recipe.Name,
+
+    x: 0,
+    y: 0,
+    width: def.width,
+    length: def.length,
+    rotation: 0,
+    color: def.color
+  };
+
+  const placement = findOpenPlacement(machine, centerWorld.x, centerWorld.y);
+  if (!placement) return;
+
+  machine.x = placement.x;
+  machine.y = placement.y;
+
+  state.machines.push(machine);
+  setSelection([machine.id]);
+
+  updateSelectedInfo();
+  draw();
 }
 
 function renderSummaryCards(rows) {
@@ -1464,10 +1530,10 @@ function drawMachines() {
     ctx.font = `${fontSize}px Arial`;
 
         // ===== label content =====
-    let labelText = machine.type;
+    let labelText = machine.recipeName || machine.type;
 
     if (machine.recipeName) {
-      labelText = `${machine.type}\n${machine.recipeName}`;
+      labelText = `${machine.recipeName}\n${machine.type}`;
     }
 
     // ===== draw main label =====
@@ -2164,7 +2230,7 @@ window.addEventListener("keydown", event => {
 window.addEventListener("resize", resizeCanvas);
 
 loadMachineCatalog().then(() => {
-  renderMachinePalette();
+  renderRecipePalette();
   resizeCanvas();
   updateSelectedInfo();
   updateViewModeUI();
