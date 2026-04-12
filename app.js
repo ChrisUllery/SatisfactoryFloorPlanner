@@ -491,9 +491,30 @@ function drawMachines() {
     const widthPx = footprint.width * state.camera.zoom;
     const heightPx = footprint.length * state.camera.zoom;
 
+    // main machine body
     ctx.fillStyle = machine.color;
     ctx.fillRect(screenPos.x, screenPos.y, widthPx, heightPx);
 
+    // visible input/output buffer tabs
+    const bufferRects = getMachineBufferRects(machine);
+
+    ctx.save();
+    ctx.fillStyle = "rgba(255, 215, 0, 0.18)";
+    ctx.strokeStyle = "rgba(255, 215, 0, 0.45)";
+    ctx.lineWidth = 1;
+
+    for (const buffer of bufferRects) {
+      const topLeft = worldToScreen(buffer.left, buffer.top);
+      const bufferWidthPx = (buffer.right - buffer.left) * state.camera.zoom;
+      const bufferHeightPx = (buffer.bottom - buffer.top) * state.camera.zoom;
+
+      ctx.fillRect(topLeft.x, topLeft.y, bufferWidthPx, bufferHeightPx);
+      ctx.strokeRect(topLeft.x, topLeft.y, bufferWidthPx, bufferHeightPx);
+    }
+
+    ctx.restore();
+
+    // machine outline
     ctx.strokeStyle = isMachineSelected(machine.id) ? "#ffd866" : "#0b0f14";
     ctx.lineWidth = isMachineSelected(machine.id) ? 3 : 1.5;
     ctx.strokeRect(screenPos.x, screenPos.y, widthPx, heightPx);
