@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Satisfactory Floor Planner - SFMD Parser</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="page">
+    <header class="hero">
+      <h1>Satisfactory Floor Planner</h1>
+      <p>
+        Upload a Satisfactory Modeler <code>.sfmd</code> file to estimate machine counts
+        and grouped floor-space blocks.
+      </p>
+    </header>
+
+    <section class="panel controls">
+      <div class="control-row">
+        <label for="sfmdFile">Upload .sfmd file</label>
+        <input id="sfmdFile" type="file" accept=".sfmd,.json" />
+      </div>
+
+      <div class="control-row">
+        <label for="machineGap">Gap between machines inside a block (meters)</label>
+        <input id="machineGap" type="number" min="0" step="0.5" value="1" />
+      </div>
+
+      <div class="control-row">
+        <label for="blockGap">Gap between blocks on preview layout (meters)</label>
+        <input id="blockGap" type="number" min="0" step="1" value="4" />
+      </div>
+
+      <div class="control-row buttons-row">
+        <button id="runBtn">Build Estimate</button>
+        <button id="drawBtn" type="button">Draw Preview</button>
+      </div>
+
+      <div id="status" class="status">Waiting for file…</div>
+    </section>
+
+    <section class="panel summary">
+      <h2>Summary</h2>
+      <div id="summaryCards" class="summary-cards"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Recipe Blocks</h2>
+      <div class="table-wrap">
+        <table id="resultsTable">
+          <thead>
+            <tr>
+              <th>Recipe</th>
+              <th>Machine</th>
+              <th>Depth</th>
+              <th>Exact Machines</th>
+              <th>Rounded</th>
+              <th>Per-Machine Footprint</th>
+              <th>Block Layout</th>
+              <th>Estimated Block Size</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Layout Preview</h2>
+      <p class="panel-note">
+        One rectangle = one grouped machine block. This is just a first-pass spatial preview.
+      </p>
+      <canvas id="layoutCanvas" width="1400" height="900"></canvas>
+    </section>
+
+    <section class="panel">
+      <h2>Raw Node Debug</h2>
+      <pre id="debugOutput">No file loaded.</pre>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

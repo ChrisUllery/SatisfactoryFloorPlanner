@@ -4,6 +4,8 @@ const ctx = canvas.getContext("2d");
 const machineSelect = document.getElementById("machineSelect");
 const addMachineBtn = document.getElementById("addMachineBtn");
 const selectedInfo = document.getElementById("selectedInfo");
+const importBlocksFile = document.getElementById("importBlocksFile");
+const importBlocksBtn = document.getElementById("importBlocksBtn");
 
 const FOUNDATION_SIZE = 8;
 const SNAP_SIZE = 0.5;
@@ -16,7 +18,6 @@ async function loadMachineCatalog() {
   const response = await fetch("data/machines.json");
   machineCatalog = await response.json();
 }
-
 
 const state = {
   camera: {
@@ -139,11 +140,17 @@ function getMachineBufferRects(
   overrideY = machine.y,
   overrideRotation = machine.rotation
 ) {
+  if (machine.isGroup) {
+    return {
+      input: null,
+      output: null
+    };
+  }
+
   const bounds = getMachineBounds(machine, overrideX, overrideY, overrideRotation);
   const bufferDepth = 1;
   const rotation = ((overrideRotation % 360) + 360) % 360;
 
-  // width <= length means short sides are top/bottom
   if (bounds.width <= bounds.length) {
     const topRect = {
       left: bounds.left,
@@ -173,14 +180,12 @@ function getMachineBufferRects(
       };
     }
 
-    // fallback
     return {
       input: topRect,
       output: bottomRect
     };
   }
 
-  // otherwise short sides are left/right
   const leftRect = {
     left: bounds.left - bufferDepth,
     right: bounds.left,
@@ -209,7 +214,6 @@ function getMachineBufferRects(
     };
   }
 
-  // fallback
   return {
     input: leftRect,
     output: rightRect
@@ -222,13 +226,19 @@ function getMachineOccupiedRects(
   overrideY = machine.y,
   overrideRotation = machine.rotation
 ) {
+  const bounds = getMachineBounds(machine, overrideX, overrideY, overrideRotation);
+
+  if (machine.isGroup) {
+    return [bounds];
+  }
+
   const buffers = getMachineBufferRects(machine, overrideX, overrideY, overrideRotation);
 
   return [
-    getMachineBounds(machine, overrideX, overrideY, overrideRotation),
+    bounds,
     buffers.input,
     buffers.output
-  ];
+  ].filter(Boolean);
 }
 
 function rectSetsOverlap(rectsA, rectsB) {
@@ -265,8 +275,6 @@ function wouldMachineOverlap(
   return false;
 }
 
-
-
 function rectanglesOverlap(a, b) {
   const separated =
     a.right <= b.left ||
@@ -276,7 +284,6 @@ function rectanglesOverlap(a, b) {
 
   return !separated;
 }
-
 
 function canPlaceMachine(machine, testX = machine.x, testY = machine.y, testRotation = machine.rotation) {
   return !wouldMachineOverlap(machine, testX, testY, testRotation);
@@ -317,8 +324,31 @@ function updateSelectedInfo() {
   }
 
   if (selected.length > 1) {
+    const sameBlockIds = [...new Set(
+      selected
+        .map(machine => machine.blockId)
+        .filter(Boolean)
+    )];
+
+    const sameRecipeNames = [...new Set(
+      selected
+        .map(machine => machine.recipeName)
+        .filter(Boolean)
+    )];
+
+    let extra = "";
+
+    if (sameBlockIds.length === 1) {
+      extra += `<br>Block ID: ${sameBlockIds[0]}`;
+    }
+
+    if (sameRecipeNames.length === 1) {
+      extra += `<br>Recipe: ${sameRecipeNames[0]}`;
+    }
+
     selectedInfo.innerHTML = `
-      <strong>${selected.length} machines selected</strong><br>
+      <strong>${selected.length} machines selected</strong>
+      ${extra}<br>
       Ctrl+C: Copy<br>
       Ctrl+X: Cut<br>
       Ctrl+V: Paste<br>
@@ -329,6 +359,44 @@ function updateSelectedInfo() {
 
   const machine = selected[0];
   const footprint = getMachineFootprint(machine);
+
+  if (machine.isGroup) {
+    selectedInfo.innerHTML = `
+      <strong>${machine.recipeName}</strong><br>
+      Group Type: ${machine.groupMachineType}<br>
+      Count: ${machine.groupCount}<br>
+      Layout: ${machine.groupRows} × ${machine.groupCols}<br>
+      Width: ${footprint.width} m<br>
+      Length: ${footprint.length} m<br>
+      X: ${machine.x.toFixed(1)} m<br>
+      Y: ${machine.y.toFixed(1)} m<br>
+      Rotation: ${machine.rotation}°
+    `;
+    return;
+  }
+
+  if (machine.blockId || machine.recipeName) {
+    selectedInfo.innerHTML = `
+      <strong>${machine.type}</strong><br>
+      Recipe: ${machine.recipeName || "—"}<br>
+      Block Machine Type: ${machine.blockMachineType || machine.type}<br>
+      Block ID: ${machine.blockId || "—"}<br>
+      Block Index: ${machine.blockIndex ?? "—"}<br>
+      Block Count: ${machine.blockCount ?? "—"}<br>
+      Layout: ${(machine.blockRows ?? "—")} × ${(machine.blockCols ?? "—")}<br>
+      Position In Block: ${
+        machine.blockPosition
+          ? `${machine.blockPosition.row}, ${machine.blockPosition.col}`
+          : "—"
+      }<br>
+      Width: ${footprint.width} m<br>
+      Length: ${footprint.length} m<br>
+      X: ${machine.x.toFixed(1)} m<br>
+      Y: ${machine.y.toFixed(1)} m<br>
+      Rotation: ${machine.rotation}°
+    `;
+    return;
+  }
 
   selectedInfo.innerHTML = `
     <strong>${machine.type}</strong><br>
@@ -359,6 +427,7 @@ function createMachine(type, x, y) {
   };
 }
 
+
 function placeMachine(type) {
   const rect = canvas.getBoundingClientRect();
   const centerWorld = screenToWorld(rect.width / 2, rect.height / 2);
@@ -366,9 +435,7 @@ function placeMachine(type) {
   const machine = createMachine(type, 0, 0);
   const placement = findOpenPlacement(machine, centerWorld.x, centerWorld.y);
 
-  if (!placement) {
-    return;
-  }
+  if (!placement) return;
 
   machine.x = placement.x;
   machine.y = placement.y;
@@ -407,6 +474,206 @@ addMachineBtn.addEventListener("click", () => {
   placeMachine(selectedType);
 });
 
+async function readJsonFile(file) {
+  const text = await file.text();
+  return JSON.parse(text);
+}
+
+function normalizeImportedRows(payload) {
+  if (Array.isArray(payload)) {
+    return payload;
+  }
+
+  if (Array.isArray(payload.rows)) {
+    return payload.rows;
+  }
+
+  if (Array.isArray(payload.blocks)) {
+    return payload.blocks;
+  }
+
+  throw new Error("Imported JSON does not contain a rows array.");
+}
+
+function createImportedMachine(type, x, y, metadata = {}) {
+  const machine = createMachine(type, x, y);
+
+  return {
+    ...machine,
+    recipeName: metadata.recipeName || null,
+    blockId: metadata.blockId || null,
+    blockIndex: metadata.blockIndex ?? null,
+    blockRows: metadata.blockRows ?? null,
+    blockCols: metadata.blockCols ?? null,
+    blockCount: metadata.blockCount ?? null,
+    blockMachineType: metadata.blockMachineType || null,
+    exactMachines: metadata.exactMachines ?? null,
+    blockPosition: metadata.blockPosition || null
+  };
+}
+
+function buildClusterMachinesFromRow(row, anchorX, anchorY, blockIndex) {
+  if (!row.block || !row.machineName || !row.recipeName) {
+    return [];
+  }
+
+  const def = getMachineDefinition(row.machineName);
+  if (!def) {
+    console.warn(`Unknown machine type in import: ${row.machineName}`);
+    return [];
+  }
+
+  const rows = row.block.rows || 1;
+  const cols = row.block.cols || 1;
+  const count = row.roundedMachines || rows * cols;
+
+  const blockId = crypto.randomUUID();
+  const machines = [];
+
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const index = r * cols + c;
+      if (index >= count) break;
+
+      const x = snap(anchorX + c * def.width);
+      const y = snap(anchorY + r * def.length);
+
+      machines.push(
+        createImportedMachine(row.machineName, x, y, {
+          recipeName: row.recipeName,
+          blockId,
+          blockIndex,
+          blockRows: rows,
+          blockCols: cols,
+          blockCount: count,
+          blockMachineType: row.machineName,
+          exactMachines: row.exactMachines ?? null,
+          blockPosition: { row: r, col: c, index }
+        })
+      );
+    }
+  }
+
+  return machines;
+}
+
+function getClusterBounds(machines) {
+  if (machines.length === 0) return null;
+
+  const bounds = machines.map(machine => getMachineBounds(machine));
+
+  return {
+    left: Math.min(...bounds.map(b => b.left)),
+    top: Math.min(...bounds.map(b => b.top)),
+    right: Math.max(...bounds.map(b => b.right)),
+    bottom: Math.max(...bounds.map(b => b.bottom)),
+    width: Math.max(...bounds.map(b => b.right)) - Math.min(...bounds.map(b => b.left)),
+    length: Math.max(...bounds.map(b => b.bottom)) - Math.min(...bounds.map(b => b.top))
+  };
+}
+
+function canPlaceImportedCluster(clusterMachines) {
+  for (const machine of clusterMachines) {
+    if (wouldMachineOverlap(machine, machine.x, machine.y, machine.rotation)) {
+      return false;
+    }
+  }
+
+  for (let i = 0; i < clusterMachines.length; i++) {
+    for (let j = i + 1; j < clusterMachines.length; j++) {
+      const aRects = getMachineOccupiedRects(clusterMachines[i]);
+      const bRects = getMachineOccupiedRects(clusterMachines[j]);
+
+      if (rectSetsOverlap(aRects, bRects)) {
+        return false;
+      }
+    }
+  }
+
+  return true;
+}
+
+function findOpenClusterPlacement(row, originX, originY, blockIndex, maxRadius = 120) {
+  const start = snapPosition(originX, originY);
+
+  const tryBuildAt = (testX, testY) => {
+    const clusterMachines = buildClusterMachinesFromRow(row, testX, testY, blockIndex);
+    if (clusterMachines.length === 0) return null;
+
+    if (canPlaceImportedCluster(clusterMachines)) {
+      return clusterMachines;
+    }
+
+    return null;
+  };
+
+  let cluster = tryBuildAt(start.x, start.y);
+  if (cluster) return cluster;
+
+  for (let radius = 1; radius <= maxRadius; radius++) {
+    for (let dx = -radius; dx <= radius; dx++) {
+      for (let dy = -radius; dy <= radius; dy++) {
+        const onRing = Math.abs(dx) === radius || Math.abs(dy) === radius;
+        if (!onRing) continue;
+
+        const testX = snap(start.x + dx * SNAP_SIZE);
+        const testY = snap(start.y + dy * SNAP_SIZE);
+
+        cluster = tryBuildAt(testX, testY);
+        if (cluster) return cluster;
+      }
+    }
+  }
+
+  return null;
+}
+
+function importMachineClusters(rows) {
+  const rect = canvas.getBoundingClientRect();
+  const centerWorld = screenToWorld(rect.width / 2, rect.height / 2);
+
+  const importedMachines = [];
+  let cursorX = snap(centerWorld.x);
+  let cursorY = snap(centerWorld.y);
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row.block || !row.machineName || !row.recipeName) continue;
+
+    const clusterMachines = findOpenClusterPlacement(row, cursorX, cursorY, i, 120);
+    if (!clusterMachines || clusterMachines.length === 0) {
+      continue;
+    }
+
+    importedMachines.push(...clusterMachines);
+
+    const clusterBounds = getClusterBounds(clusterMachines);
+    cursorX = snap(clusterBounds.right + 4);
+  }
+
+  if (importedMachines.length === 0) {
+    throw new Error("No valid machine clusters were imported.");
+  }
+
+  state.machines.push(...importedMachines);
+  setSelection(importedMachines.map(machine => machine.id));
+  updateSelectedInfo();
+  draw();
+}
+
+importBlocksBtn.addEventListener("click", async () => {
+  try {
+    const file = importBlocksFile.files?.[0];
+    if (!file) return;
+
+    const payload = await readJsonFile(file);
+    const rows = normalizeImportedRows(payload);
+    importMachineClusters(rows);
+  } catch (error) {
+    console.error(error);
+    alert(error.message);
+  }
+});
 
 function drawGrid() {
   const rect = canvas.getBoundingClientRect();
@@ -427,7 +694,7 @@ function drawGrid() {
   ctx.lineWidth = 1;
 
   if (state.camera.zoom >= 12) {
-    ctx.strokeStyle = "#16202a";
+    ctx.strokeStyle = "#1f2a33";
 
     for (let x = startXMinor; x <= endXMinor; x += minorStep) {
       const sx = worldToScreen(x, 0).x;
@@ -451,7 +718,7 @@ function drawGrid() {
   const startYFoundation = Math.floor(topLeft.y / foundationStep) * foundationStep;
   const endYFoundation = Math.ceil(bottomRight.y / foundationStep) * foundationStep;
 
-  ctx.strokeStyle = "#2a3947";
+  ctx.strokeStyle = "#3a4a57";
 
   for (let x = startXFoundation; x <= endXFoundation; x += foundationStep) {
     const sx = worldToScreen(x, 0).x;
@@ -489,40 +756,97 @@ function drawOrigin() {
 
 function drawWrappedMachineLabel(ctx, text, centerX, centerY, maxWidth, maxHeight, fontSize) {
   const lineHeight = fontSize * 1.15;
-  const lines = [];
 
-  // If it's a single long word, just keep shrinking elsewhere rather than chopping it up
-  const words = text.split(" ");
+  // 🔥 NEW: respect manual line breaks
+  const rawLines = text.split("\n");
+  const finalLines = [];
 
-  let currentLine = words[0] || "";
+  for (const rawLine of rawLines) {
+    const words = rawLine.split(" ");
+    let currentLine = words[0] || "";
 
-  for (let i = 1; i < words.length; i++) {
-    const testLine = `${currentLine} ${words[i]}`;
-    if (ctx.measureText(testLine).width <= maxWidth) {
-      currentLine = testLine;
-    } else {
-      lines.push(currentLine);
-      currentLine = words[i];
+    for (let i = 1; i < words.length; i++) {
+      const testLine = `${currentLine} ${words[i]}`;
+      if (ctx.measureText(testLine).width <= maxWidth) {
+        currentLine = testLine;
+      } else {
+        finalLines.push(currentLine);
+        currentLine = words[i];
+      }
+    }
+
+    if (currentLine) {
+      finalLines.push(currentLine);
     }
   }
 
-  if (currentLine) {
-    lines.push(currentLine);
-  }
+  const totalHeight = finalLines.length * lineHeight;
 
-  // If wrapped text is too tall, fall back to one line
-  const totalHeight = lines.length * lineHeight;
-  const finalLines = totalHeight <= maxHeight ? lines : [text];
+  // fallback if too tall
+  const linesToDraw =
+    totalHeight <= maxHeight ? finalLines : [text.replace("\n", " ")];
 
-  const finalHeight = finalLines.length * lineHeight;
+  const finalHeight = linesToDraw.length * lineHeight;
   let y = centerY - finalHeight / 2 + lineHeight / 2;
 
-  for (const line of finalLines) {
+  for (const line of linesToDraw) {
     ctx.fillText(line, centerX, y);
     y += lineHeight;
   }
 }
 
+function drawGroupLabel(machine, screenPos, widthPx, heightPx) {
+  const centerX = screenPos.x + widthPx / 2;
+  const centerY = screenPos.y + heightPx / 2;
+
+  const lines = [
+    machine.recipeName,
+    `${machine.groupMachineType} × ${machine.groupCount}`,
+    `${machine.groupRows} × ${machine.groupCols}`,
+    `${getMachineFootprint(machine).width.toFixed(1)}m × ${getMachineFootprint(machine).length.toFixed(1)}m`
+  ];
+
+  let fontSize = Math.floor(Math.min(widthPx, heightPx) * 0.11);
+  fontSize = Math.max(10, Math.min(22, fontSize));
+
+  while (fontSize > 8) {
+    ctx.font = `bold ${fontSize}px Arial`;
+    const line1Width = ctx.measureText(lines[0]).width;
+
+    ctx.font = `${fontSize - 1}px Arial`;
+    const otherWidths = lines.slice(1).map(line => ctx.measureText(line).width);
+    const widest = Math.max(line1Width, ...otherWidths);
+    const totalHeight = fontSize * 1.35 * 4;
+
+    if (widest <= widthPx - 16 && totalHeight <= heightPx - 16) {
+      break;
+    }
+
+    fontSize -= 1;
+  }
+
+  const titleFont = `bold ${fontSize}px Arial`;
+  const bodyFont = `${Math.max(fontSize - 1, 8)}px Arial`;
+  const lineHeight = fontSize * 1.35;
+  const totalHeight = lineHeight * 4;
+  let y = centerY - totalHeight / 2 + lineHeight * 0.8;
+
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+
+  ctx.fillStyle = "#e8eef5";
+  ctx.font = titleFont;
+  ctx.fillText(lines[0], centerX, y);
+
+  ctx.fillStyle = "#d2dbe5";
+  ctx.font = bodyFont;
+  ctx.fillText(lines[1], centerX, y + lineHeight);
+  ctx.fillText(lines[2], centerX, y + lineHeight * 2);
+  ctx.fillText(lines[3], centerX, y + lineHeight * 3);
+
+  ctx.textAlign = "start";
+  ctx.textBaseline = "alphabetic";
+}
 
 function drawMachines() {
   for (const machine of state.machines) {
@@ -532,50 +856,61 @@ function drawMachines() {
     const widthPx = footprint.width * state.camera.zoom;
     const heightPx = footprint.length * state.camera.zoom;
 
-    // main machine body
+    if (machine.isGroup) {
+      ctx.fillStyle = machine.color || "#2f4257";
+      ctx.globalAlpha = 0.82;
+      ctx.fillRect(screenPos.x, screenPos.y, widthPx, heightPx);
+      ctx.globalAlpha = 1;
+
+      ctx.strokeStyle = isMachineSelected(machine.id) ? "#ffd866" : "#6fc2ff";
+      ctx.lineWidth = isMachineSelected(machine.id) ? 3 : 2;
+      ctx.strokeRect(screenPos.x, screenPos.y, widthPx, heightPx);
+
+      drawGroupLabel(machine, screenPos, widthPx, heightPx);
+      continue;
+    }
+
     ctx.fillStyle = machine.color;
     ctx.fillRect(screenPos.x, screenPos.y, widthPx, heightPx);
 
-    // visible input/output buffer tabs
     const buffers = getMachineBufferRects(machine);
 
     ctx.save();
 
-    // input buffer (green)
-    let topLeft = worldToScreen(buffers.input.left, buffers.input.top);
-    let bufferWidthPx = (buffers.input.right - buffers.input.left) * state.camera.zoom;
-    let bufferHeightPx = (buffers.input.bottom - buffers.input.top) * state.camera.zoom;
+    if (buffers.input) {
+      let topLeft = worldToScreen(buffers.input.left, buffers.input.top);
+      let bufferWidthPx = (buffers.input.right - buffers.input.left) * state.camera.zoom;
+      let bufferHeightPx = (buffers.input.bottom - buffers.input.top) * state.camera.zoom;
 
-    ctx.fillStyle = "rgba(80, 200, 120, 0.22)";
-    ctx.strokeStyle = "rgba(80, 200, 120, 0.55)";
-    ctx.lineWidth = 1;
-    ctx.fillRect(topLeft.x, topLeft.y, bufferWidthPx, bufferHeightPx);
-    ctx.strokeRect(topLeft.x, topLeft.y, bufferWidthPx, bufferHeightPx);
+      ctx.fillStyle = "rgba(80, 200, 120, 0.22)";
+      ctx.strokeStyle = "rgba(80, 200, 120, 0.55)";
+      ctx.lineWidth = 1;
+      ctx.fillRect(topLeft.x, topLeft.y, bufferWidthPx, bufferHeightPx);
+      ctx.strokeRect(topLeft.x, topLeft.y, bufferWidthPx, bufferHeightPx);
+    }
 
-    // output buffer (yellow)
-    topLeft = worldToScreen(buffers.output.left, buffers.output.top);
-    bufferWidthPx = (buffers.output.right - buffers.output.left) * state.camera.zoom;
-    bufferHeightPx = (buffers.output.bottom - buffers.output.top) * state.camera.zoom;
+    if (buffers.output) {
+      let topLeft = worldToScreen(buffers.output.left, buffers.output.top);
+      let bufferWidthPx = (buffers.output.right - buffers.output.left) * state.camera.zoom;
+      let bufferHeightPx = (buffers.output.bottom - buffers.output.top) * state.camera.zoom;
 
-    ctx.fillStyle = "rgba(255, 215, 0, 0.18)";
-    ctx.strokeStyle = "rgba(255, 215, 0, 0.45)";
-    ctx.fillRect(topLeft.x, topLeft.y, bufferWidthPx, bufferHeightPx);
-    ctx.strokeRect(topLeft.x, topLeft.y, bufferWidthPx, bufferHeightPx);
+      ctx.fillStyle = "rgba(255, 215, 0, 0.18)";
+      ctx.strokeStyle = "rgba(255, 215, 0, 0.45)";
+      ctx.fillRect(topLeft.x, topLeft.y, bufferWidthPx, bufferHeightPx);
+      ctx.strokeRect(topLeft.x, topLeft.y, bufferWidthPx, bufferHeightPx);
+    }
 
     ctx.restore();
 
-    // machine outline
     ctx.strokeStyle = isMachineSelected(machine.id) ? "#ffd866" : "#0b0f14";
     ctx.lineWidth = isMachineSelected(machine.id) ? 3 : 1.5;
     ctx.strokeRect(screenPos.x, screenPos.y, widthPx, heightPx);
 
-    // ---- label drawing ----
     const paddingX = 8;
     const paddingY = 8;
     const maxTextWidth = Math.max(16, widthPx - paddingX * 2);
     const maxTextHeight = Math.max(16, heightPx - paddingY * 2);
 
-    // Base font size on on-screen machine size
     let fontSize = Math.floor(Math.min(widthPx, heightPx) * 0.18);
     fontSize = Math.max(8, Math.min(24, fontSize));
 
@@ -583,7 +918,6 @@ function drawMachines() {
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
 
-    // Shrink font until the label fits as either one line or wrapped lines
     while (fontSize > 8) {
       ctx.font = `${fontSize}px Arial`;
 
@@ -626,9 +960,17 @@ function drawMachines() {
 
     ctx.font = `${fontSize}px Arial`;
 
+        // ===== label content =====
+    let labelText = machine.type;
+
+    if (machine.recipeName) {
+      labelText = `${machine.type}\n${machine.recipeName}`;
+    }
+
+    // ===== draw main label =====
     drawWrappedMachineLabel(
       ctx,
-      machine.type,
+      labelText,
       screenPos.x + widthPx / 2,
       screenPos.y + heightPx / 2,
       maxTextWidth,
@@ -636,11 +978,27 @@ function drawMachines() {
       fontSize
     );
 
-    // reset defaults
+    // ===== optional tiny block position tag =====
+    if (machine.blockPosition && state.camera.zoom > 12) {
+      ctx.fillStyle = "#ffffffcc";
+      ctx.font = "10px Arial";
+      ctx.textAlign = "right";
+      ctx.textBaseline = "bottom";
+
+      ctx.fillText(
+        `${machine.blockPosition.row},${machine.blockPosition.col}`,
+        screenPos.x + widthPx - 3,
+        screenPos.y + heightPx - 3
+      );
+
+      ctx.textAlign = "start";
+      ctx.textBaseline = "alphabetic";
+    }
     ctx.textAlign = "start";
     ctx.textBaseline = "alphabetic";
+    }
   }
-}
+
 
 function drawMarquee() {
   if (!state.marqueeRect) return;
@@ -658,7 +1016,10 @@ function drawMarquee() {
 
 function draw() {
   const rect = canvas.getBoundingClientRect();
-  ctx.clearRect(0, 0, rect.width, rect.height);
+
+  // ===== background fill (NEW) =====
+  ctx.fillStyle = "#2b2b2b"; // ← tweak this
+  ctx.fillRect(0, 0, rect.width, rect.height);
 
   drawGrid();
   drawOrigin();
@@ -725,6 +1086,7 @@ function getSelectionGroupBounds(machines) {
     bottom: Math.max(...boundsList.map(b => b.bottom))
   };
 }
+
 function getBoundsCenter(bounds) {
   return {
     x: (bounds.left + bounds.right) / 2,
@@ -798,8 +1160,8 @@ function canApplyMachineProposals(proposals, ignoreIds = []) {
       const a = proposals[i];
       const b = proposals[j];
 
-      const aRects  = getMachineOccupiedRects(a.machine, a.x, a.y, a.rotation);
-      const bRects  = getMachineOccupiedRects(b.machine, b.x, b.y, b.rotation);
+      const aRects = getMachineOccupiedRects(a.machine, a.x, a.y, a.rotation);
+      const bRects = getMachineOccupiedRects(b.machine, b.x, b.y, b.rotation);
 
       if (rectSetsOverlap(aRects, bRects)) {
         return false;
@@ -823,6 +1185,18 @@ function copySelectedMachines() {
     length: machine.length,
     rotation: machine.rotation,
     color: machine.color,
+    isGroup: Boolean(machine.isGroup),
+
+    recipeName: machine.recipeName || null,
+    blockId: machine.blockId || null,
+    blockIndex: machine.blockIndex ?? null,
+    blockRows: machine.blockRows ?? null,
+    blockCols: machine.blockCols ?? null,
+    blockCount: machine.blockCount ?? null,
+    blockMachineType: machine.blockMachineType || null,
+    exactMachines: machine.exactMachines ?? null,
+    blockPosition: machine.blockPosition || null,
+
     offsetX: machine.x - groupBounds.left,
     offsetY: machine.y - groupBounds.top
   }));
@@ -848,12 +1222,28 @@ function canPasteClipboardAt(anchorX, anchorY) {
     width: item.width,
     length: item.length,
     rotation: item.rotation,
-    color: item.color
+    color: item.color,
+    isGroup: item.isGroup,
+
+    recipeName: item.recipeName,
+    blockId: item.blockId,
+    blockIndex: item.blockIndex,
+    blockRows: item.blockRows,
+    blockCols: item.blockCols,
+    blockCount: item.blockCount,
+    blockMachineType: item.blockMachineType,
+    exactMachines: item.exactMachines,
+    blockPosition: item.blockPosition
   }));
 
   for (const previewMachine of previewMachines) {
     for (const existing of state.machines) {
-      if (rectSetsOverlap(getMachineOccupiedRects(previewMachine), getMachineOccupiedRects(existing))) {
+      if (
+        rectSetsOverlap(
+          getMachineOccupiedRects(previewMachine),
+          getMachineOccupiedRects(existing)
+        )
+      ) {
         return false;
       }
     }
@@ -861,7 +1251,12 @@ function canPasteClipboardAt(anchorX, anchorY) {
 
   for (let i = 0; i < previewMachines.length; i++) {
     for (let j = i + 1; j < previewMachines.length; j++) {
-      if (rectSetsOverlap(getMachineOccupiedRects(previewMachines[i]), getMachineOccupiedRects(previewMachines[j]))) {
+      if (
+        rectSetsOverlap(
+          getMachineOccupiedRects(previewMachines[i]),
+          getMachineOccupiedRects(previewMachines[j])
+        )
+      ) {
         return false;
       }
     }
@@ -913,7 +1308,18 @@ function pasteClipboard() {
     width: item.width,
     length: item.length,
     rotation: item.rotation,
-    color: item.color
+    color: item.color,
+    isGroup: item.isGroup,
+
+    recipeName: item.recipeName,
+    blockId: item.blockId,
+    blockIndex: item.blockIndex,
+    blockRows: item.blockRows,
+    blockCols: item.blockCols,
+    blockCount: item.blockCount,
+    blockMachineType: item.blockMachineType,
+    exactMachines: item.exactMachines,
+    blockPosition: item.blockPosition
   }));
 
   state.machines.push(...newMachines);
@@ -1026,24 +1432,23 @@ canvas.addEventListener("mousemove", event => {
   const mouseX = event.clientX - rect.left;
   const mouseY = event.clientY - rect.top;
 
-    if (state.dragMode === "pan") {
-      const dx = mouseX - state.dragStartScreen.x;
-      const dy = mouseY - state.dragStartScreen.y;
+  if (state.dragMode === "pan") {
+    const dx = mouseX - state.dragStartScreen.x;
+    const dy = mouseY - state.dragStartScreen.y;
 
-      // only start real panning after slight movement
-      if (!state.isDragging && Math.abs(dx) < 2 && Math.abs(dy) < 2) {
-        return;
-      }
-
-      state.isDragging = true;
-
-      state.camera.x += dx;
-      state.camera.y += dy;
-
-      state.dragStartScreen = { x: mouseX, y: mouseY };
-      draw();
+    if (!state.isDragging && Math.abs(dx) < 2 && Math.abs(dy) < 2) {
       return;
     }
+
+    state.isDragging = true;
+
+    state.camera.x += dx;
+    state.camera.y += dy;
+
+    state.dragStartScreen = { x: mouseX, y: mouseY };
+    draw();
+    return;
+  }
 
   if (state.dragMode === "marquee") {
     state.marqueeRect = normalizeRect(
@@ -1108,7 +1513,7 @@ canvas.addEventListener("mousemove", event => {
 
     const proposedPositions = buildProposedPositions(deltaX, deltaY);
     if (!proposedPositions) {
-      return; // just don't move if invalid
+      return;
     }
 
     for (const proposed of proposedPositions) {
@@ -1187,7 +1592,6 @@ window.addEventListener("keydown", event => {
     draw();
     return;
   }
-
 
   if (event.key === "Delete" || event.key === "Backspace") {
     deleteSelectedMachines();
