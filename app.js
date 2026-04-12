@@ -12,7 +12,9 @@ const summaryViewEl = document.getElementById("summaryView");
 const summaryCardsEl = document.getElementById("summaryCards");
 const summaryTableBody = document.querySelector("#summaryTable tbody");
 const summaryPreviewCanvas = document.getElementById("summaryPreviewCanvas");
-const summaryPreviewCtx = summaryPreviewCanvas.getContext("2d");
+const summaryPreviewCtx = summaryPreviewCanvas
+  ? summaryPreviewCanvas.getContext("2d")
+  : null;
 
 const FOUNDATION_SIZE = 8;
 const SNAP_SIZE = 0.5;
@@ -874,6 +876,7 @@ function renderSummaryTable(rows) {
 }
 
 function drawSummaryPreview(rows) {
+  if (!summaryPreviewCanvas || !summaryPreviewCtx) return;
   const canvasWidth = summaryPreviewCanvas.width;
   const canvasHeight = summaryPreviewCanvas.height;
 
