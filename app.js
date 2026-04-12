@@ -27,10 +27,11 @@ const state = {
   machines: [],
   selectedMachineIds: [],
   clipboard: [],
-  dragMode: null, // "pan" | "machine" | "marquee" | null
+  dragMode: null,
   dragStartScreen: { x: 0, y: 0 },
   machineDragOffsets: [],
-  marqueeRect: null
+  marqueeRect: null,
+  isDragging: false
 };
 
 function resizeCanvas() {
@@ -729,7 +730,7 @@ function canApplyMachineProposals(proposals, ignoreIds = []) {
       const aRects  = getMachineOccupiedRects(a.machine, a.x, a.y, a.rotation);
       const bRects  = getMachineOccupiedRects(b.machine, b.x, b.y, b.rotation);
 
-      if (rectanglesOverlap(aRects, bRects)) {
+      if (rectSetsOverlap(aRects, bRects)) {
         return false;
       }
     }
@@ -901,6 +902,7 @@ canvas.addEventListener("mousedown", event => {
 
   if (event.button === 1) {
     state.dragMode = "pan";
+    state.isDragging = false;
     return;
   }
 
@@ -942,6 +944,8 @@ canvas.addEventListener("mousedown", event => {
   if (event.button === 0) {
     clearSelection();
     updateSelectedInfo();
+    state.dragMode = "pan";
+    state.isDragging = false;
     draw();
   }
 });
@@ -951,17 +955,24 @@ canvas.addEventListener("mousemove", event => {
   const mouseX = event.clientX - rect.left;
   const mouseY = event.clientY - rect.top;
 
-  if (state.dragMode === "pan") {
-    const dx = mouseX - state.dragStartScreen.x;
-    const dy = mouseY - state.dragStartScreen.y;
+    if (state.dragMode === "pan") {
+      const dx = mouseX - state.dragStartScreen.x;
+      const dy = mouseY - state.dragStartScreen.y;
 
-    state.camera.x += dx;
-    state.camera.y += dy;
+      // only start real panning after slight movement
+      if (!state.isDragging && Math.abs(dx) < 2 && Math.abs(dy) < 2) {
+        return;
+      }
 
-    state.dragStartScreen = { x: mouseX, y: mouseY };
-    draw();
-    return;
-  }
+      state.isDragging = true;
+
+      state.camera.x += dx;
+      state.camera.y += dy;
+
+      state.dragStartScreen = { x: mouseX, y: mouseY };
+      draw();
+      return;
+    }
 
   if (state.dragMode === "marquee") {
     state.marqueeRect = normalizeRect(
@@ -1051,6 +1062,7 @@ window.addEventListener("mouseup", () => {
     updateSelectedInfo();
     draw();
     state.dragMode = null;
+    state.isDragging = false;
     return;
   }
 
