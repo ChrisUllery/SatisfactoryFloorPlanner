@@ -13,6 +13,14 @@
       <p class="subhead">Rough 2D factory layout planning tool.</p>
 
       <section class="panel">
+        <h2>View</h2>
+        <div class="machine-picker">
+          <button id="plannerViewBtn" type="button">Planner View</button>
+          <button id="summaryViewBtn" type="button">Summary View</button>
+        </div>
+      </section>
+
+      <section class="panel">
         <h2>Machine Palette</h2>
         <div class="machine-picker">
           <select id="machineSelect"></select>
@@ -50,6 +58,39 @@
 
     <main id="workspace">
       <canvas id="plannerCanvas"></canvas>
+
+      <div id="summaryView" style="display: none; padding: 24px; overflow: auto;">
+        <section class="panel">
+          <h2>Summary</h2>
+          <div id="summaryCards" class="summary-cards"></div>
+        </section>
+
+        <section class="panel">
+          <h2>Recipe Blocks</h2>
+          <div class="table-wrap">
+            <table id="summaryTable">
+              <thead>
+                <tr>
+                  <th>Recipe</th>
+                  <th>Machine</th>
+                  <th>Exact Machines</th>
+                  <th>Rounded</th>
+                  <th>Per-Machine Footprint</th>
+                  <th>Block Layout</th>
+                  <th>Estimated Block Size</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h2>Layout Preview</h2>
+          <p class="subhead">One rectangle = one grouped machine block.</p>
+          <canvas id="summaryPreviewCanvas" width="1400" height="900"></canvas>
+        </section>
+      </div>
     </main>
   </div>
 

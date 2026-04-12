@@ -3,9 +3,16 @@ const ctx = canvas.getContext("2d");
 
 const machineSelect = document.getElementById("machineSelect");
 const addMachineBtn = document.getElementById("addMachineBtn");
+const plannerViewBtn = document.getElementById("plannerViewBtn");
+const summaryViewBtn = document.getElementById("summaryViewBtn");
 const selectedInfo = document.getElementById("selectedInfo");
 const importFactoryFile = document.getElementById("importFactoryFile");
 const importFactoryBtn = document.getElementById("importFactoryBtn");
+const summaryViewEl = document.getElementById("summaryView");
+const summaryCardsEl = document.getElementById("summaryCards");
+const summaryTableBody = document.querySelector("#summaryTable tbody");
+const summaryPreviewCanvas = document.getElementById("summaryPreviewCanvas");
+const summaryPreviewCtx = summaryPreviewCanvas.getContext("2d");
 
 const FOUNDATION_SIZE = 8;
 const SNAP_SIZE = 0.5;
@@ -341,7 +348,9 @@ const state = {
   dragStartScreen: { x: 0, y: 0 },
   machineDragOffsets: [],
   marqueeRect: null,
-  isDragging: false
+  isDragging: false,
+  viewMode: "planner",
+  lastImportedRows: null
 };
 
 function resizeCanvas() {
@@ -783,6 +792,21 @@ addMachineBtn.addEventListener("click", () => {
   placeMachine(selectedType);
 });
 
+plannerViewBtn.addEventListener("click", () => {
+  state.viewMode = "planner";
+  updateViewModeUI();
+  draw();
+});
+
+summaryViewBtn.addEventListener("click", () => {
+  state.viewMode = "summary";
+  updateViewModeUI();
+
+  if (state.lastImportedRows && state.lastImportedRows.length > 0) {
+    renderSummaryView(state.lastImportedRows);
+  }
+});
+
 async function readJsonFile(file) {
   const text = await file.text();
   return JSON.parse(text);
@@ -802,6 +826,158 @@ function normalizeImportedRows(payload) {
   }
 
   throw new Error("Imported JSON does not contain a rows array.");
+}
+
+function renderSummaryCards(rows) {
+  const totalExact = rows.reduce((sum, row) => sum + row.exactMachines, 0);
+  const totalRounded = rows.reduce((sum, row) => sum + row.roundedMachines, 0);
+  const totalArea = rows.reduce((sum, row) => sum + row.block.width * row.block.length, 0);
+
+  summaryCardsEl.innerHTML = `
+    <div class="summary-card">
+      <div class="label">Recipe Blocks</div>
+      <div class="value">${rows.length}</div>
+    </div>
+    <div class="summary-card">
+      <div class="label">Exact Machines</div>
+      <div class="value">${totalExact.toFixed(2)}</div>
+    </div>
+    <div class="summary-card">
+      <div class="label">Rounded Machines</div>
+      <div class="value">${totalRounded}</div>
+    </div>
+    <div class="summary-card">
+      <div class="label">Estimated Area</div>
+      <div class="value">${totalArea.toFixed(0)} m²</div>
+    </div>
+  `;
+}
+
+function renderSummaryTable(rows) {
+  summaryTableBody.innerHTML = "";
+
+  for (const row of rows) {
+    const tr = document.createElement("tr");
+
+    tr.innerHTML = `
+      <td><strong>${escapeHtml(row.recipeName)}</strong></td>
+      <td>${escapeHtml(row.machineName)}</td>
+      <td>${row.exactMachines.toFixed(2)}</td>
+      <td><span class="badge">${row.roundedMachines}</span></td>
+      <td>${row.footprint.width}m × ${row.footprint.length}m</td>
+      <td>${row.block.rows} rows × ${row.block.cols} cols</td>
+      <td>${row.block.width.toFixed(1)}m × ${row.block.length.toFixed(1)}m</td>
+    `;
+
+    summaryTableBody.appendChild(tr);
+  }
+}
+
+function drawSummaryPreview(rows) {
+  const canvasWidth = summaryPreviewCanvas.width;
+  const canvasHeight = summaryPreviewCanvas.height;
+
+  summaryPreviewCtx.clearRect(0, 0, canvasWidth, canvasHeight);
+  summaryPreviewCtx.fillStyle = "#0c1117";
+  summaryPreviewCtx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+  if (!rows.length) {
+    summaryPreviewCtx.fillStyle = "#9fb0c2";
+    summaryPreviewCtx.font = "20px Arial";
+    summaryPreviewCtx.fillText("No blocks to draw yet.", 30, 50);
+    return;
+  }
+
+  const padding = 30;
+  const blockGapMeters = 4;
+
+  const maxBlockWidth = Math.max(...rows.map(r => r.block.width));
+  const maxBlockLength = Math.max(...rows.map(r => r.block.length));
+
+  const usableWidth = canvasWidth - padding * 2;
+  const usableHeight = canvasHeight - padding * 2;
+
+  const scaleX = usableWidth / Math.max(maxBlockWidth * 4, 120);
+  const scaleY = usableHeight / Math.max(maxBlockLength * 6, 120);
+  const scale = Math.max(6, Math.min(scaleX, scaleY));
+
+  const itemGapPx = blockGapMeters * scale;
+  const labelLineHeight = 22;
+  const labelBlockGap = 8;
+  const labelLines = 4;
+  const labelHeight = labelLines * labelLineHeight;
+
+  let x = padding;
+  let y = padding;
+  let currentRowHeight = 0;
+
+  for (const row of rows) {
+    const drawWidth = row.block.width * scale;
+    const drawHeight = row.block.length * scale;
+
+    const line1 = row.recipeName;
+    const line2 = `${row.machineName} × ${row.roundedMachines}`;
+    const line3 = `${row.block.rows} × ${row.block.cols}`;
+    const line4 = `${row.block.width.toFixed(1)}m × ${row.block.length.toFixed(1)}m`;
+
+    summaryPreviewCtx.font = "bold 16px Arial";
+    const line1Width = summaryPreviewCtx.measureText(line1).width;
+
+    summaryPreviewCtx.font = "14px Arial";
+    const line2Width = summaryPreviewCtx.measureText(line2).width;
+    const line3Width = summaryPreviewCtx.measureText(line3).width;
+    const line4Width = summaryPreviewCtx.measureText(line4).width;
+
+    const labelWidth = Math.max(line1Width, line2Width, line3Width, line4Width);
+    const itemWidth = Math.max(drawWidth, labelWidth);
+    const itemHeight = labelHeight + labelBlockGap + drawHeight;
+
+    if (x + itemWidth > canvasWidth - padding) {
+      x = padding;
+      y += currentRowHeight + itemGapPx;
+      currentRowHeight = 0;
+    }
+
+    const labelX = x;
+    const labelY = y;
+    const rectX = x;
+    const rectY = labelY + labelHeight + labelBlockGap;
+
+    summaryPreviewCtx.fillStyle = "#e8eef5";
+    summaryPreviewCtx.font = "bold 16px Arial";
+    summaryPreviewCtx.fillText(line1, labelX, labelY + 18);
+
+    summaryPreviewCtx.fillStyle = "#9fb0c2";
+    summaryPreviewCtx.font = "14px Arial";
+    summaryPreviewCtx.fillText(line2, labelX, labelY + 18 + labelLineHeight);
+    summaryPreviewCtx.fillText(line3, labelX, labelY + 18 + labelLineHeight * 2);
+    summaryPreviewCtx.fillText(line4, labelX, labelY + 18 + labelLineHeight * 3);
+
+    summaryPreviewCtx.fillStyle = "#243446";
+    summaryPreviewCtx.strokeStyle = "#6fc2ff";
+    summaryPreviewCtx.lineWidth = 2;
+    summaryPreviewCtx.fillRect(rectX, rectY, drawWidth, drawHeight);
+    summaryPreviewCtx.strokeRect(rectX, rectY, drawWidth, drawHeight);
+
+    x += itemWidth + itemGapPx;
+    currentRowHeight = Math.max(currentRowHeight, itemHeight);
+  }
+}
+
+function renderSummaryView(rows) {
+  renderSummaryCards(rows);
+  renderSummaryTable(rows);
+  drawSummaryPreview(rows);
+}
+
+function updateViewModeUI() {
+  if (state.viewMode === "summary") {
+    canvas.style.display = "none";
+    summaryViewEl.style.display = "block";
+  } else {
+    canvas.style.display = "block";
+    summaryViewEl.style.display = "none";
+  }
 }
 
 function createImportedMachine(type, x, y, metadata = {}) {
@@ -990,7 +1166,8 @@ importFactoryBtn.addEventListener("click", async () => {
       const payload = await readJsonFile(file);
       rows = normalizeImportedRows(payload);
     }
-
+    state.lastImportedRows = rows;
+    renderSummaryView(rows);
     importMachineClusters(rows);
   } catch (error) {
     console.error(error);
@@ -1340,16 +1517,67 @@ function drawMarquee() {
 function draw() {
   const rect = canvas.getBoundingClientRect();
 
-  // ===== background fill (NEW) =====
-  ctx.fillStyle = "#2b2b2b"; // ← tweak this
+  ctx.fillStyle = "#2b2b2b";
   ctx.fillRect(0, 0, rect.width, rect.height);
+
+  if (state.viewMode === "summary") {
+    drawSummaryView();
+    return;
+  }
 
   drawGrid();
   drawOrigin();
   drawMachines();
   drawMarquee();
 }
+function drawSummaryView() {
+  if (!state.lastImportedRows || state.lastImportedRows.length === 0) {
+    ctx.fillStyle = "#e8eef5";
+    ctx.font = "18px Arial";
+    ctx.fillText("No imported factory summary yet.", 40, 50);
 
+    ctx.fillStyle = "#9fb0c2";
+    ctx.font = "14px Arial";
+    ctx.fillText("Import a .sfmd or parser JSON file first.", 40, 80);
+    return;
+  }
+
+  ctx.fillStyle = "#e8eef5";
+  ctx.font = "bold 20px Arial";
+  ctx.fillText("Factory Summary", 40, 50);
+
+  ctx.fillStyle = "#9fb0c2";
+  ctx.font = "14px Arial";
+  ctx.fillText(`${state.lastImportedRows.length} recipe blocks`, 40, 78);
+
+  let x = 40;
+  let y = 120;
+  const lineHeight = 22;
+  const colWidth = 420;
+  const bottomMargin = 40;
+  const maxHeight = canvas.getBoundingClientRect().height - bottomMargin;
+
+  for (const row of state.lastImportedRows) {
+    ctx.fillStyle = "#e8eef5";
+    ctx.font = "bold 14px Arial";
+    ctx.fillText(row.recipeName, x, y);
+
+    ctx.fillStyle = "#9fb0c2";
+    ctx.font = "13px Arial";
+    ctx.fillText(
+      `${row.machineName} × ${row.roundedMachines} | ${row.block.rows} × ${row.block.cols} | ${row.block.width.toFixed(1)}m × ${row.block.length.toFixed(1)}m`,
+      x,
+      y + lineHeight
+    );
+
+    y += lineHeight * 3;
+
+    if (y > maxHeight) {
+      y = 120;
+      x += colWidth;
+    }
+  }
+}
 function hitTestMachine(screenX, screenY) {
   const world = screenToWorld(screenX, screenY);
 
@@ -1650,7 +1878,16 @@ function pasteClipboard() {
   updateSelectedInfo();
   draw();
 }
+function escapeHtml(str) {
+  if (str === null || str === undefined) return "";
 
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
 function deleteSelectedMachines() {
   if (state.selectedMachineIds.length === 0) return;
 
@@ -1927,4 +2164,5 @@ loadMachineCatalog().then(() => {
   renderMachinePalette();
   resizeCanvas();
   updateSelectedInfo();
+  updateViewModeUI();
 });
