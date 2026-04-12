@@ -141,41 +141,79 @@ function getMachineBufferRects(
 ) {
   const bounds = getMachineBounds(machine, overrideX, overrideY, overrideRotation);
   const bufferDepth = 1;
+  const rotation = ((overrideRotation % 360) + 360) % 360;
 
-  // Short sides get the buffer tabs.
-  // If width is shorter/equal, short faces are top/bottom.
+  // width <= length means short sides are top/bottom
   if (bounds.width <= bounds.length) {
-    return [
-      {
-        left: bounds.left,
-        right: bounds.right,
-        top: bounds.top - bufferDepth,
-        bottom: bounds.top
-      },
-      {
-        left: bounds.left,
-        right: bounds.right,
-        top: bounds.bottom,
-        bottom: bounds.bottom + bufferDepth
-      }
-    ];
+    const topRect = {
+      left: bounds.left,
+      right: bounds.right,
+      top: bounds.top - bufferDepth,
+      bottom: bounds.top
+    };
+
+    const bottomRect = {
+      left: bounds.left,
+      right: bounds.right,
+      top: bounds.bottom,
+      bottom: bounds.bottom + bufferDepth
+    };
+
+    if (rotation === 0) {
+      return {
+        input: topRect,
+        output: bottomRect
+      };
+    }
+
+    if (rotation === 180) {
+      return {
+        input: bottomRect,
+        output: topRect
+      };
+    }
+
+    // fallback
+    return {
+      input: topRect,
+      output: bottomRect
+    };
   }
 
-  // Otherwise short faces are left/right.
-  return [
-    {
-      left: bounds.left - bufferDepth,
-      right: bounds.left,
-      top: bounds.top,
-      bottom: bounds.bottom
-    },
-    {
-      left: bounds.right,
-      right: bounds.right + bufferDepth,
-      top: bounds.top,
-      bottom: bounds.bottom
-    }
-  ];
+  // otherwise short sides are left/right
+  const leftRect = {
+    left: bounds.left - bufferDepth,
+    right: bounds.left,
+    top: bounds.top,
+    bottom: bounds.bottom
+  };
+
+  const rightRect = {
+    left: bounds.right,
+    right: bounds.right + bufferDepth,
+    top: bounds.top,
+    bottom: bounds.bottom
+  };
+
+  if (rotation === 90) {
+    return {
+      input: rightRect,
+      output: leftRect
+    };
+  }
+
+  if (rotation === 270) {
+    return {
+      input: leftRect,
+      output: rightRect
+    };
+  }
+
+  // fallback
+  return {
+    input: leftRect,
+    output: rightRect
+  };
 }
 
 function getMachineOccupiedRects(
@@ -184,9 +222,12 @@ function getMachineOccupiedRects(
   overrideY = machine.y,
   overrideRotation = machine.rotation
 ) {
+  const buffers = getMachineBufferRects(machine, overrideX, overrideY, overrideRotation);
+
   return [
     getMachineBounds(machine, overrideX, overrideY, overrideRotation),
-    ...getMachineBufferRects(machine, overrideX, overrideY, overrideRotation)
+    buffers.input,
+    buffers.output
   ];
 }
 
@@ -496,21 +537,30 @@ function drawMachines() {
     ctx.fillRect(screenPos.x, screenPos.y, widthPx, heightPx);
 
     // visible input/output buffer tabs
-    const bufferRects = getMachineBufferRects(machine);
+    const buffers = getMachineBufferRects(machine);
 
     ctx.save();
+
+    // input buffer (green)
+    let topLeft = worldToScreen(buffers.input.left, buffers.input.top);
+    let bufferWidthPx = (buffers.input.right - buffers.input.left) * state.camera.zoom;
+    let bufferHeightPx = (buffers.input.bottom - buffers.input.top) * state.camera.zoom;
+
+    ctx.fillStyle = "rgba(80, 200, 120, 0.22)";
+    ctx.strokeStyle = "rgba(80, 200, 120, 0.55)";
+    ctx.lineWidth = 1;
+    ctx.fillRect(topLeft.x, topLeft.y, bufferWidthPx, bufferHeightPx);
+    ctx.strokeRect(topLeft.x, topLeft.y, bufferWidthPx, bufferHeightPx);
+
+    // output buffer (yellow)
+    topLeft = worldToScreen(buffers.output.left, buffers.output.top);
+    bufferWidthPx = (buffers.output.right - buffers.output.left) * state.camera.zoom;
+    bufferHeightPx = (buffers.output.bottom - buffers.output.top) * state.camera.zoom;
+
     ctx.fillStyle = "rgba(255, 215, 0, 0.18)";
     ctx.strokeStyle = "rgba(255, 215, 0, 0.45)";
-    ctx.lineWidth = 1;
-
-    for (const buffer of bufferRects) {
-      const topLeft = worldToScreen(buffer.left, buffer.top);
-      const bufferWidthPx = (buffer.right - buffer.left) * state.camera.zoom;
-      const bufferHeightPx = (buffer.bottom - buffer.top) * state.camera.zoom;
-
-      ctx.fillRect(topLeft.x, topLeft.y, bufferWidthPx, bufferHeightPx);
-      ctx.strokeRect(topLeft.x, topLeft.y, bufferWidthPx, bufferHeightPx);
-    }
+    ctx.fillRect(topLeft.x, topLeft.y, bufferWidthPx, bufferHeightPx);
+    ctx.strokeRect(topLeft.x, topLeft.y, bufferWidthPx, bufferHeightPx);
 
     ctx.restore();
 
