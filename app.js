@@ -4,8 +4,8 @@ const ctx = canvas.getContext("2d");
 const machineSelect = document.getElementById("machineSelect");
 const addMachineBtn = document.getElementById("addMachineBtn");
 const selectedInfo = document.getElementById("selectedInfo");
-const importBlocksFile = document.getElementById("importBlocksFile");
-const importBlocksBtn = document.getElementById("importBlocksBtn");
+const importFactoryFile = document.getElementById("importFactoryFile");
+const importFactoryBtn = document.getElementById("importFactoryBtn");
 
 const FOUNDATION_SIZE = 8;
 const SNAP_SIZE = 0.5;
@@ -13,6 +13,315 @@ const MIN_ZOOM = 4;
 const MAX_ZOOM = 80;
 
 let machineCatalog = {};
+
+const GAME_DATA_PATH = "data/game_data.json";
+
+let gameData = null;
+
+const MACHINE_FOOTPRINTS = {
+  "Constructor": { width: 8, length: 6 },
+  "Smelter": { width: 9, length: 6 },
+  "Foundry": { width: 10, length: 9 },
+  "Assembler": { width: 15, length: 10 },
+  "Manufacturer": { width: 18, length: 10 },
+  "Refinery": { width: 20, length: 10 },
+  "Packager": { width: 8, length: 8 },
+  "Blender": { width: 18, length: 16 },
+  "Particle Accelerator": { width: 30, length: 30 },
+  "Fuel-Powered Generator": { width: 18, length: 16 },
+  "Coal-Powered Generator": { width: 18, length: 16 },
+  "Water Extractor": { width: 20, length: 14 },
+  "Miner": { width: 8, length: 8 },
+  "Oil Extractor": { width: 10, length: 10 },
+  "Resource Well Extractor": { width: 8, length: 8 },
+  "Quantum Encoder": { width: 24, length: 20 },
+  "Converter": { width: 16, length: 16 },
+  "Space Elevator": { width: 40, length: 40 }
+};
+
+async function loadGameData() {
+  if (gameData) return gameData;
+
+  const response = await fetch(GAME_DATA_PATH);
+  if (!response.ok) {
+    throw new Error(`Could not load ${GAME_DATA_PATH}`);
+  }
+
+  gameData = await response.json();
+  return gameData;
+}
+
+function parseFraction(value) {
+  if (value === undefined || value === null || value === "") return 0;
+  if (typeof value === "number") return value;
+
+  const str = String(value).trim();
+
+  if (str.includes("/")) {
+    const [a, b] = str.split("/").map(Number);
+    return a / b;
+  }
+
+  return Number(str);
+}
+
+function getRecipeMaps(data) {
+  const recipeMap = new Map();
+  const machineMap = new Map();
+
+  for (const recipe of data.Recipes || []) {
+    recipeMap.set(recipe.Name, recipe);
+  }
+
+  for (const machine of data.Machines || []) {
+    machineMap.set(machine.Name, machine);
+  }
+
+  return { recipeMap, machineMap };
+}
+
+function getPositivePartsPerMinute(recipe) {
+  const batchTime = parseFraction(recipe.BatchTime);
+  if (!batchTime) return {};
+
+  const output = {};
+
+  for (const part of recipe.Parts || []) {
+    const amount = parseFraction(part.Amount);
+    if (amount > 0) {
+      output[part.Part] = (output[part.Part] || 0) + (amount / batchTime) * 60;
+    }
+  }
+
+  return output;
+}
+
+function getNegativePartsPerMinute(recipe) {
+  const batchTime = parseFraction(recipe.BatchTime);
+  if (!batchTime) return {};
+
+  const input = {};
+
+  for (const part of recipe.Parts || []) {
+    const amount = parseFraction(part.Amount);
+    if (amount < 0) {
+      input[part.Part] = (input[part.Part] || 0) + (Math.abs(amount) / batchTime) * 60;
+    }
+  }
+
+  return input;
+}
+
+function getMainMachineName(recipe) {
+  return recipe?.Machine || "Unknown";
+}
+
+function getParserFootprint(machineName) {
+  return MACHINE_FOOTPRINTS[machineName] || { width: 10, length: 10 };
+}
+
+function chooseGrid(count) {
+  const cols = Math.ceil(Math.sqrt(count));
+  const rows = Math.ceil(count / cols);
+  return { rows, cols };
+}
+
+function getBlockEstimate(machineName, roundedCount, gap) {
+  const footprint = getParserFootprint(machineName);
+  const { rows, cols } = chooseGrid(roundedCount);
+
+  const totalWidth = cols * footprint.width + Math.max(0, cols - 1) * gap;
+  const totalLength = rows * footprint.length + Math.max(0, rows - 1) * gap;
+
+  return {
+    rows,
+    cols,
+    width: totalWidth,
+    length: totalLength
+  };
+}
+
+function buildNodeState(sfmd, recipeMap) {
+  return sfmd.Data.map((node, index) => {
+    const recipe = recipeMap.get(node.Name);
+
+    if (!recipe) {
+      return {
+        index,
+        node,
+        recipe: null,
+        outputsPerMinute: {},
+        inputsPerMinute: {},
+        machineCountExact: 0,
+        outputDemands: {},
+        warnings: [`Recipe "${node.Name}" not found in game_data.json`]
+      };
+    }
+
+    return {
+      index,
+      node,
+      recipe,
+      outputsPerMinute: getPositivePartsPerMinute(recipe),
+      inputsPerMinute: getNegativePartsPerMinute(recipe),
+      machineCountExact: 0,
+      outputDemands: {},
+      warnings: []
+    };
+  });
+}
+
+function addDemandToNode(nodes, nodeIndex, partName, ppm) {
+  const state = nodes[nodeIndex];
+  if (!state || !state.recipe) return;
+
+  state.outputDemands[partName] = (state.outputDemands[partName] || 0) + ppm;
+
+  const outputRate = state.outputsPerMinute[partName];
+  if (!outputRate || outputRate <= 0) {
+    state.warnings.push(`No output rate found for part "${partName}"`);
+    return;
+  }
+
+  const requiredMachineCount = state.outputDemands[partName] / outputRate;
+  const previousMachineCount = state.machineCountExact;
+
+  if (requiredMachineCount <= previousMachineCount + 1e-9) {
+    return;
+  }
+
+  const deltaMachines = requiredMachineCount - previousMachineCount;
+  state.machineCountExact = requiredMachineCount;
+
+  for (const [inputPart, inputRatePerMachine] of Object.entries(state.inputsPerMinute)) {
+    const totalAdditionalInput = inputRatePerMachine * deltaMachines;
+    const upstreamList = state.node.Inputs?.[inputPart] || [];
+
+    if (upstreamList.length === 0) {
+      continue;
+    }
+
+    const splitDemand = totalAdditionalInput / upstreamList.length;
+
+    for (const upstreamIndex of upstreamList) {
+      addDemandToNode(nodes, upstreamIndex, inputPart, splitDemand);
+    }
+  }
+}
+
+function solveFactory(sfmd, gameData) {
+  const { recipeMap } = getRecipeMaps(gameData);
+  const nodes = buildNodeState(sfmd, recipeMap);
+
+  for (const state of nodes) {
+    const maxMachines = parseFraction(state.node.Max);
+    if (maxMachines > 0 && state.recipe) {
+      state.machineCountExact = maxMachines;
+
+      for (const [inputPart, inputRatePerMachine] of Object.entries(state.inputsPerMinute)) {
+        const totalInputPpm = inputRatePerMachine * maxMachines;
+        const upstreamList = state.node.Inputs?.[inputPart] || [];
+
+        if (upstreamList.length === 0) continue;
+
+        const splitDemand = totalInputPpm / upstreamList.length;
+
+        for (const upstreamIndex of upstreamList) {
+          addDemandToNode(nodes, upstreamIndex, inputPart, splitDemand);
+        }
+      }
+    }
+  }
+
+  return nodes;
+}
+
+function computeNodeDepths(nodes) {
+  const depths = new Array(nodes.length).fill(0);
+  const visited = new Array(nodes.length).fill(false);
+
+  function getDepth(i) {
+    if (visited[i]) return depths[i];
+    visited[i] = true;
+
+    const node = nodes[i];
+    if (!node.recipe) return 0;
+
+    let maxDepth = 0;
+
+    for (const inputs of Object.values(node.node.Inputs || {})) {
+      for (const upstreamIndex of inputs) {
+        maxDepth = Math.max(maxDepth, getDepth(upstreamIndex) + 1);
+      }
+    }
+
+    depths[i] = maxDepth;
+    return maxDepth;
+  }
+
+  nodes.forEach((_, i) => getDepth(i));
+  return depths;
+}
+
+function buildRecipeSummaryFromSfmd(sfmd, gameData, gap = 1) {
+  const solvedNodes = solveFactory(sfmd, gameData);
+  const grouped = new Map();
+  const depths = computeNodeDepths(solvedNodes);
+
+  for (const nodeState of solvedNodes) {
+    if (!nodeState.recipe || nodeState.machineCountExact <= 0) continue;
+
+    const recipeName = nodeState.recipe.Name;
+    const machineName = getMainMachineName(nodeState.recipe);
+    const nodeDepth = depths[nodeState.index] ?? 0;
+
+    if (!grouped.has(recipeName)) {
+      grouped.set(recipeName, {
+        recipeName,
+        machineName,
+        exactMachines: 0,
+        warnings: [],
+        depthTotal: 0,
+        depthCount: 0,
+        maxDepth: 0
+      });
+    }
+
+    const group = grouped.get(recipeName);
+    group.exactMachines += nodeState.machineCountExact;
+    group.warnings.push(...nodeState.warnings);
+    group.depthTotal += nodeDepth;
+    group.depthCount += 1;
+    group.maxDepth = Math.max(group.maxDepth, nodeDepth);
+  }
+
+  return Array.from(grouped.values())
+    .map(group => {
+      const roundedMachines = Math.ceil(group.exactMachines);
+      const footprint = getParserFootprint(group.machineName);
+      const block = getBlockEstimate(group.machineName, roundedMachines, gap);
+      const avgDepth = group.depthCount ? group.depthTotal / group.depthCount : 0;
+
+      return {
+        ...group,
+        avgDepth,
+        roundedMachines,
+        footprint,
+        block
+      };
+    })
+    .sort((a, b) => {
+      if (a.avgDepth !== b.avgDepth) {
+        return a.avgDepth - b.avgDepth;
+      }
+
+      if (a.roundedMachines !== b.roundedMachines) {
+        return b.roundedMachines - a.roundedMachines;
+      }
+
+      return a.recipeName.localeCompare(b.recipeName);
+    });
+}
 
 async function loadMachineCatalog() {
   const response = await fetch("data/machines.json");
@@ -661,13 +970,27 @@ function importMachineClusters(rows) {
   draw();
 }
 
-importBlocksBtn.addEventListener("click", async () => {
+importFactoryBtn.addEventListener("click", async () => {
   try {
-    const file = importBlocksFile.files?.[0];
+    const file = importFactoryFile.files?.[0];
     if (!file) return;
 
-    const payload = await readJsonFile(file);
-    const rows = normalizeImportedRows(payload);
+    let rows;
+
+    if (file.name.toLowerCase().endsWith(".sfmd")) {
+      const sfmd = await readJsonFile(file);
+
+      if (!sfmd || !Array.isArray(sfmd.Data)) {
+        throw new Error("Uploaded file does not look like a valid .sfmd save.");
+      }
+
+      const gd = await loadGameData();
+      rows = buildRecipeSummaryFromSfmd(sfmd, gd, 1);
+    } else {
+      const payload = await readJsonFile(file);
+      rows = normalizeImportedRows(payload);
+    }
+
     importMachineClusters(rows);
   } catch (error) {
     console.error(error);
