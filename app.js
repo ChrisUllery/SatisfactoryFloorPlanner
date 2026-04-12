@@ -1015,18 +1015,9 @@ canvas.addEventListener("mousemove", event => {
       return proposals;
     }
 
-    let proposedPositions = buildProposedPositions(deltaX, deltaY);
-
+    const proposedPositions = buildProposedPositions(deltaX, deltaY);
     if (!proposedPositions) {
-      proposedPositions = buildProposedPositions(deltaX, 0);
-    }
-
-    if (!proposedPositions) {
-      proposedPositions = buildProposedPositions(0, deltaY);
-    }
-
-    if (!proposedPositions) {
-      return;
+      return; // just don't move if invalid
     }
 
     for (const proposed of proposedPositions) {
