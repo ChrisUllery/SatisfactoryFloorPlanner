@@ -186,3 +186,56 @@ li {
   border-radius: 8px;
   background: #0c1117;
 }
+@media print {
+  html,
+  body {
+    overflow: visible !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+
+  #sidebar,
+  #plannerCanvas {
+    display: none !important;
+  }
+
+  #workspace {
+    overflow: visible !important;
+    background: #ffffff !important;
+  }
+
+  #summaryView {
+    display: block !important;
+    padding: 0 !important;
+    overflow: visible !important;
+  }
+
+  .panel {
+    background: #ffffff !important;
+    color: #000000 !important;
+    border: 1px solid #cccccc !important;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .summary-card,
+  #summaryPreviewCanvas,
+  table,
+  th,
+  td {
+    color: #000000 !important;
+  }
+
+  #summaryPreviewCanvas {
+    border: 1px solid #cccccc !important;
+    max-width: 100% !important;
+    height: auto !important;
+  }
+
+  a,
+  button,
+  input,
+  select {
+    display: none !important;
+  }
+}

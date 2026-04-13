@@ -16,7 +16,7 @@ const summaryPreviewCanvas = document.getElementById("summaryPreviewCanvas");
 const summaryPreviewCtx = summaryPreviewCanvas
   ? summaryPreviewCanvas.getContext("2d")
   : null;
-
+const exportSummaryPdfBtn = document.getElementById("exportSummaryPdfBtn");
 const FOUNDATION_SIZE = 8;
 const SNAP_SIZE = 0.5;
 const MIN_ZOOM = 4;
@@ -1054,6 +1054,27 @@ function updateViewModeUI() {
   }
 }
 
+function exportSummaryPdf() {
+  if (!state.lastImportedRows || state.lastImportedRows.length === 0) {
+    alert("Import a factory first so there is something to export.");
+    return;
+  }
+
+  const previousViewMode = state.viewMode;
+
+  state.viewMode = "summary";
+  updateViewModeUI();
+  renderSummaryView(state.lastImportedRows);
+
+  setTimeout(() => {
+    window.print();
+
+    state.viewMode = previousViewMode;
+    updateViewModeUI();
+    draw();
+  }, 100);
+}
+
 function createImportedMachine(type, x, y, metadata = {}) {
   const machine = createMachine(type, x, y);
 
@@ -2004,6 +2025,10 @@ function deleteSelectedMachines() {
 
 canvas.addEventListener("contextmenu", event => {
   event.preventDefault();
+});
+
+exportSummaryPdfBtn.addEventListener("click", () => {
+  exportSummaryPdf();
 });
 
 canvas.addEventListener(
