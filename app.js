@@ -477,40 +477,19 @@ function getMachineBufferRects(
   const bufferDepth = 1;
   const rotation = ((overrideRotation % 360) + 360) % 360;
 
-  if (bounds.width <= bounds.length) {
-    const topRect = {
-      left: bounds.left,
-      right: bounds.right,
-      top: bounds.top - bufferDepth,
-      bottom: bounds.top
-    };
+  const topRect = {
+    left: bounds.left,
+    right: bounds.right,
+    top: bounds.top - bufferDepth,
+    bottom: bounds.top
+  };
 
-    const bottomRect = {
-      left: bounds.left,
-      right: bounds.right,
-      top: bounds.bottom,
-      bottom: bounds.bottom + bufferDepth
-    };
-
-    if (rotation === 0) {
-      return {
-        input: topRect,
-        output: bottomRect
-      };
-    }
-
-    if (rotation === 180) {
-      return {
-        input: bottomRect,
-        output: topRect
-      };
-    }
-
-    return {
-      input: topRect,
-      output: bottomRect
-    };
-  }
+  const bottomRect = {
+    left: bounds.left,
+    right: bounds.right,
+    top: bounds.bottom,
+    bottom: bounds.bottom + bufferDepth
+  };
 
   const leftRect = {
     left: bounds.left - bufferDepth,
@@ -526,24 +505,29 @@ function getMachineBufferRects(
     bottom: bounds.bottom
   };
 
+  // Base rule:
+  // 0°   = input top,    output bottom
+  // 90°  = input right,  output left
+  // 180° = input bottom, output top
+  // 270° = input left,   output right
+
+  if (rotation === 0) {
+    return { input: topRect, output: bottomRect };
+  }
+
   if (rotation === 90) {
-    return {
-      input: rightRect,
-      output: leftRect
-    };
+    return { input: rightRect, output: leftRect };
+  }
+
+  if (rotation === 180) {
+    return { input: bottomRect, output: topRect };
   }
 
   if (rotation === 270) {
-    return {
-      input: leftRect,
-      output: rightRect
-    };
+    return { input: leftRect, output: rightRect };
   }
 
-  return {
-    input: leftRect,
-    output: rightRect
-  };
+  return { input: topRect, output: bottomRect };
 }
 
 function getMachineOccupiedRects(
