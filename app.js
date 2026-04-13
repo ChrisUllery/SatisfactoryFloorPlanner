@@ -2321,6 +2321,12 @@ function exportLayoutPng() {
 
   exportCanvas.width = Math.ceil(worldWidth * scale);
   exportCanvas.height = Math.ceil(worldHeight * scale);
+  function exportWorldToScreen(wx, wy) {
+  return {
+    x: (wx - worldLeft) * scale,
+    y: (wy - worldTop) * scale
+  };
+}
 
 
 
