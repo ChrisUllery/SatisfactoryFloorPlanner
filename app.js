@@ -1211,6 +1211,7 @@ function importMachineClusters(rows) {
   const centerWorld = screenToWorld(rect.width / 2, rect.height / 2);
 
   const importedMachines = [];
+  state.machines = [];
 
   let cursorX = snap(centerWorld.x);
   let cursorY = snap(centerWorld.y);
@@ -1261,7 +1262,7 @@ function importMachineClusters(rows) {
     throw new Error("No valid machine clusters were imported.");
   }
 
-  state.machines = [];
+
   state.machines.push(...importedMachines);
 
   clearSelection();
