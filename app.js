@@ -1144,10 +1144,21 @@ function getClusterBounds(machines) {
   };
 }
 
-function canPlaceImportedCluster(clusterMachines) {
+function canPlaceImportedCluster(clusterMachines, extraMachines = []) {
+  const blockers = [...state.machines, ...extraMachines];
+
   for (const machine of clusterMachines) {
     if (wouldMachineOverlap(machine, machine.x, machine.y, machine.rotation)) {
       return false;
+    }
+
+    for (const other of blockers) {
+      const aRects = getMachineOccupiedRects(machine);
+      const bRects = getMachineOccupiedRects(other);
+
+      if (rectSetsOverlap(aRects, bRects)) {
+        return false;
+      }
     }
   }
 
@@ -1165,14 +1176,14 @@ function canPlaceImportedCluster(clusterMachines) {
   return true;
 }
 
-function findOpenClusterPlacement(row, originX, originY, blockIndex, maxRadius = 120) {
+function findOpenClusterPlacement(row, originX, originY, blockIndex, extraMachines = [], maxRadius = 120) {
   const start = snapPosition(originX, originY);
 
   const tryBuildAt = (testX, testY) => {
     const clusterMachines = buildClusterMachinesFromRow(row, testX, testY, blockIndex);
     if (clusterMachines.length === 0) return null;
 
-    if (canPlaceImportedCluster(clusterMachines)) {
+    if (canPlaceImportedCluster(clusterMachines, extraMachines)) {
       return clusterMachines;
     }
 
@@ -1217,27 +1228,38 @@ function importMachineClusters(rows) {
     const row = rows[i];
     if (!row.block || !row.machineName || !row.recipeName) continue;
 
-    const blockWidth = row.block.width;
-    const blockHeight = row.block.length;
+    const estimatedBlockWidth = row.block.width;
+    const estimatedBlockHeight = row.block.length;
 
-    // wrap to next row
-    if (cursorX + blockWidth > centerWorld.x + maxRowWidth) {
+    if (cursorX + estimatedBlockWidth > centerWorld.x + maxRowWidth) {
       cursorX = snap(centerWorld.x);
       cursorY = snap(cursorY + currentRowHeight + gap);
       currentRowHeight = 0;
     }
 
-    const clusterMachines = buildClusterMachinesFromRow(row, cursorX, cursorY, i);
+    const clusterMachines = findOpenClusterPlacement(
+      row,
+      cursorX,
+      cursorY,
+      i,
+      importedMachines
+    );
 
     if (!clusterMachines || clusterMachines.length === 0) {
-      console.warn("Still failed to build cluster:", row.recipeName);
+      console.warn("Failed to place cluster without overlap:", row.recipeName);
+      continue;
+    }
+
+    const clusterBounds = getClusterBounds(clusterMachines);
+    if (!clusterBounds) {
+      console.warn("Failed to compute cluster bounds:", row.recipeName);
       continue;
     }
 
     importedMachines.push(...clusterMachines);
 
-    cursorX = snap(cursorX + blockWidth + gap);
-    currentRowHeight = Math.max(currentRowHeight, blockHeight);
+    cursorX = snap(clusterBounds.right + gap);
+    currentRowHeight = Math.max(currentRowHeight, clusterBounds.length);
   }
 
   if (importedMachines.length === 0) {
