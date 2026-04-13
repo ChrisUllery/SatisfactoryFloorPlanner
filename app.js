@@ -1412,8 +1412,27 @@ function exportLayoutPng() {
   exportCanvas.width = Math.ceil(worldWidth * scale);
   exportCanvas.height = Math.ceil(worldHeight * scale);
 
-  exportCtx.fillStyle = "#2b2b2b";
-  exportCtx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
+  const gridSize = 8; // 8 meters per foundation
+  exportCtx.strokeStyle = "#3a3f47";
+  exportCtx.lineWidth = 1;
+
+  // vertical lines
+  for (let x = Math.floor(minX / gridSize) * gridSize; x <= maxX + gridSize; x += gridSize) {
+    const sx = (x - minX + padding) * scale;
+    exportCtx.beginPath();
+    exportCtx.moveTo(sx, 0);
+    exportCtx.lineTo(sx, exportCanvas.height);
+    exportCtx.stroke();
+  }
+
+  // horizontal lines
+  for (let y = Math.floor(minY / gridSize) * gridSize; y <= maxY + gridSize; y += gridSize) {
+    const sy = (y - minY + padding) * scale;
+    exportCtx.beginPath();
+    exportCtx.moveTo(0, sy);
+    exportCtx.lineTo(exportCanvas.width, sy);
+    exportCtx.stroke();
+  }
 
   function exportWorldToScreen(wx, wy) {
     return {
