@@ -1171,7 +1171,7 @@ function canPlaceImportedCluster(clusterMachines, extraMachines = []) {
   return true;
 }
 
-function findOpenClusterPlacement(row, originX, originY, blockIndex, extraMachines = [], maxRadius = 120) {
+function findOpenClusterPlacement(row, originX, originY, blockIndex, extraMachines = [], maxRadius = 2000) {
   const start = snapPosition(originX, originY);
 
   const tryBuildAt = (testX, testY) => {
