@@ -11,7 +11,9 @@
     window.dataLayer = window.dataLayer || [];
     function gtag(){dataLayer.push(arguments);}
     gtag('js', new Date());
-    gtag('config', 'G-T5HRJ5LG8W');
+
+    // debug_mode lets you see events instantly in GA DebugView
+    gtag('config', 'G-T5HRJ5LG8W', { debug_mode: true });
   </script>
 
   <link rel="stylesheet" href="style.css" />
@@ -120,8 +122,12 @@
 
     if (exportPlannerBtn) {
       exportPlannerBtn.addEventListener("click", () => {
+
         if (typeof gtag === "function") {
+          console.log("GA event fired: export_planner_json");
           gtag("event", "export_planner_json");
+        } else {
+          console.error("GA NOT LOADED");
         }
 
         if (!window.getPlannerState) {
@@ -148,8 +154,12 @@
 
     if (exportLayoutPngBtn) {
       exportLayoutPngBtn.addEventListener("click", () => {
+
         if (typeof gtag === "function") {
+          console.log("GA event fired: export_layout_png");
           gtag("event", "export_layout_png");
+        } else {
+          console.error("GA NOT LOADED");
         }
 
         if (typeof exportLayoutPng === "function") {
