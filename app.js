@@ -1403,44 +1403,88 @@ function exportLayoutPng() {
   const maxX = Math.max(...boundsList.map(b => b.right));
   const maxY = Math.max(...boundsList.map(b => b.bottom));
 
-  const padding = 4;
-  const scale = 20;
+  const padding = 4; // meters around layout
+  const scale = 20;  // pixels per meter
 
-  const worldWidth = (maxX - minX) + padding * 2;
-  const worldHeight = (maxY - minY) + padding * 2;
+  const worldLeft = minX - padding;
+  const worldTop = minY - padding;
+  const worldRight = maxX + padding;
+  const worldBottom = maxY + padding;
+
+  const worldWidth = worldRight - worldLeft;
+  const worldHeight = worldBottom - worldTop;
 
   exportCanvas.width = Math.ceil(worldWidth * scale);
   exportCanvas.height = Math.ceil(worldHeight * scale);
 
-  const gridSize = 8; // 8 meters per foundation
-  exportCtx.strokeStyle = "#3a3f47";
+  exportCtx.clearRect(0, 0, exportCanvas.width, exportCanvas.height);
+
+  // ===== background =====
+  exportCtx.fillStyle = "#2b2b2b";
+  exportCtx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
+
+  function exportWorldToScreen(wx, wy) {
+    return {
+      x: (wx - worldLeft) * scale,
+      y: (wy - worldTop) * scale
+    };
+  }
+
+  // ===== grid =====
+  const minorStep = SNAP_SIZE;          // 0.5m
+  const foundationStep = FOUNDATION_SIZE; // 8m
+
+  if (scale >= 12) {
+    exportCtx.strokeStyle = "#1f2a33";
+    exportCtx.lineWidth = 1;
+
+    const startXMinor = Math.floor(worldLeft / minorStep) * minorStep;
+    const endXMinor = Math.ceil(worldRight / minorStep) * minorStep;
+    const startYMinor = Math.floor(worldTop / minorStep) * minorStep;
+    const endYMinor = Math.ceil(worldBottom / minorStep) * minorStep;
+
+    for (let x = startXMinor; x <= endXMinor; x += minorStep) {
+      const sx = exportWorldToScreen(x, 0).x;
+      exportCtx.beginPath();
+      exportCtx.moveTo(sx, 0);
+      exportCtx.lineTo(sx, exportCanvas.height);
+      exportCtx.stroke();
+    }
+
+    for (let y = startYMinor; y <= endYMinor; y += minorStep) {
+      const sy = exportWorldToScreen(0, y).y;
+      exportCtx.beginPath();
+      exportCtx.moveTo(0, sy);
+      exportCtx.lineTo(exportCanvas.width, sy);
+      exportCtx.stroke();
+    }
+  }
+
+  exportCtx.strokeStyle = "#3a4a57";
   exportCtx.lineWidth = 1;
 
-  // vertical lines
-  for (let x = Math.floor(minX / gridSize) * gridSize; x <= maxX + gridSize; x += gridSize) {
-    const sx = (x - minX + padding) * scale;
+  const startXFoundation = Math.floor(worldLeft / foundationStep) * foundationStep;
+  const endXFoundation = Math.ceil(worldRight / foundationStep) * foundationStep;
+  const startYFoundation = Math.floor(worldTop / foundationStep) * foundationStep;
+  const endYFoundation = Math.ceil(worldBottom / foundationStep) * foundationStep;
+
+  for (let x = startXFoundation; x <= endXFoundation; x += foundationStep) {
+    const sx = exportWorldToScreen(x, 0).x;
     exportCtx.beginPath();
     exportCtx.moveTo(sx, 0);
     exportCtx.lineTo(sx, exportCanvas.height);
     exportCtx.stroke();
   }
 
-  // horizontal lines
-  for (let y = Math.floor(minY / gridSize) * gridSize; y <= maxY + gridSize; y += gridSize) {
-    const sy = (y - minY + padding) * scale;
+  for (let y = startYFoundation; y <= endYFoundation; y += foundationStep) {
+    const sy = exportWorldToScreen(0, y).y;
     exportCtx.beginPath();
     exportCtx.moveTo(0, sy);
     exportCtx.lineTo(exportCanvas.width, sy);
     exportCtx.stroke();
   }
 
-  function exportWorldToScreen(wx, wy) {
-    return {
-      x: (wx - minX + padding) * scale,
-      y: (wy - minY + padding) * scale
-    };
-  }
-
+  // ===== machines =====
   for (const machine of state.machines) {
     const footprint = getMachineFootprint(machine);
     const screenPos = exportWorldToScreen(machine.x, machine.y);
@@ -1501,6 +1545,22 @@ function exportLayoutPng() {
       exportCtx.textAlign = "start";
       exportCtx.textBaseline = "alphabetic";
     }
+
+    if (machine.blockPosition) {
+      exportCtx.fillStyle = "#ffffffcc";
+      exportCtx.font = "10px Arial";
+      exportCtx.textAlign = "right";
+      exportCtx.textBaseline = "bottom";
+
+      exportCtx.fillText(
+        `${machine.blockPosition.row},${machine.blockPosition.col}`,
+        screenPos.x + widthPx - 3,
+        screenPos.y + heightPx - 3
+      );
+
+      exportCtx.textAlign = "start";
+      exportCtx.textBaseline = "alphabetic";
+    }
   }
 
   const link = document.createElement("a");
@@ -1510,20 +1570,6 @@ function exportLayoutPng() {
 }
 
 window.exportLayoutPng = exportLayoutPng;
-  const totalHeight = finalLines.length * lineHeight;
-
-  // fallback if too tall
-  const linesToDraw =
-    totalHeight <= maxHeight ? finalLines : [text.replace("\n", " ")];
-
-  const finalHeight = linesToDraw.length * lineHeight;
-  let y = centerY - finalHeight / 2 + lineHeight / 2;
-
-  for (const line of linesToDraw) {
-    ctx.fillText(line, centerX, y);
-    y += lineHeight;
-  }
-}
 
 function drawGroupLabel(machine, screenPos, widthPx, heightPx) {
   const centerX = screenPos.x + widthPx / 2;
