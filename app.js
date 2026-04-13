@@ -1085,6 +1085,7 @@ function buildClusterMachinesFromRow(row, anchorX, anchorY, blockIndex) {
   const rows = row.block.rows || 1;
   const cols = row.block.cols || 1;
   const count = row.roundedMachines || rows * cols;
+  const gap = 1;
 
   const blockId = crypto.randomUUID();
   const machines = [];
@@ -1094,8 +1095,8 @@ function buildClusterMachinesFromRow(row, anchorX, anchorY, blockIndex) {
       const index = r * cols + c;
       if (index >= count) break;
 
-      const x = snap(anchorX + c * def.width);
-      const y = snap(anchorY + r * def.length);
+      const x = snap(anchorX + c * (def.width + gap));
+      const y = snap(anchorY + r * (def.length + gap));
 
       machines.push(
         createImportedMachine(row.machineName, x, y, {
@@ -1201,6 +1202,7 @@ function importMachineClusters(rows) {
 
     const clusterMachines = findOpenClusterPlacement(row, cursorX, cursorY, i, 120);
     if (!clusterMachines || clusterMachines.length === 0) {
+      console.warn("Skipped row during import:", row.recipeName, row.machineName, row.roundedMachines);
       continue;
     }
 
@@ -1213,9 +1215,12 @@ function importMachineClusters(rows) {
   if (importedMachines.length === 0) {
     throw new Error("No valid machine clusters were imported.");
   }
-
+  state.machines = [];
   state.machines.push(...importedMachines);
+
+  clearSelection();
   setSelection(importedMachines.map(machine => machine.id));
+
   updateSelectedInfo();
   draw();
 }
