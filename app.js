@@ -1387,41 +1387,8 @@ function drawWrappedMachineLabel(ctx, text, centerX, centerY, maxWidth, maxHeigh
       finalLines.push(currentLine);
     }
   }
-function exportLayoutPng() {
-  if (!state.machines || state.machines.length === 0) {
-    alert("There is no layout to export yet.");
-    return;
-  }
 
-  const exportCanvas = document.createElement("canvas");
-  const exportCtx = exportCanvas.getContext("2d");
 
-  const boundsList = state.machines.map(machine => getMachineBounds(machine));
-
-  const minX = Math.min(...boundsList.map(b => b.left));
-  const minY = Math.min(...boundsList.map(b => b.top));
-  const maxX = Math.max(...boundsList.map(b => b.right));
-  const maxY = Math.max(...boundsList.map(b => b.bottom));
-
-  const padding = 4; // meters around layout
-  const scale = 20;  // pixels per meter
-
-  const worldLeft = minX - padding;
-  const worldTop = minY - padding;
-  const worldRight = maxX + padding;
-  const worldBottom = maxY + padding;
-
-  const worldWidth = worldRight - worldLeft;
-  const worldHeight = worldBottom - worldTop;
-
-  exportCanvas.width = Math.ceil(worldWidth * scale);
-  exportCanvas.height = Math.ceil(worldHeight * scale);
-
-  exportCtx.clearRect(0, 0, exportCanvas.width, exportCanvas.height);
-
-  // ===== background =====
-  exportCtx.fillStyle = "#2b2b2b";
-  exportCtx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
 
   function exportWorldToScreen(wx, wy) {
     return {
@@ -2457,3 +2424,141 @@ loadMachineCatalog().then(() => {
   updateSelectedInfo();
   updateViewModeUI();
 });
+function exportLayoutPng() {
+  if (!state.machines || state.machines.length === 0) {
+    alert("There is no layout to export yet.");
+    return;
+  }
+
+  const exportCanvas = document.createElement("canvas");
+  const ctx = exportCanvas.getContext("2d");
+
+  const boundsList = state.machines.map(m => getMachineBounds(m));
+
+  const minX = Math.min(...boundsList.map(b => b.left));
+  const minY = Math.min(...boundsList.map(b => b.top));
+  const maxX = Math.max(...boundsList.map(b => b.right));
+  const maxY = Math.max(...boundsList.map(b => b.bottom));
+
+  const padding = 4;
+  const scale = 20;
+
+  const worldLeft = minX - padding;
+  const worldTop = minY - padding;
+  const worldRight = maxX + padding;
+  const worldBottom = maxY + padding;
+
+  const width = worldRight - worldLeft;
+  const height = worldBottom - worldTop;
+
+  exportCanvas.width = Math.ceil(width * scale);
+  exportCanvas.height = Math.ceil(height * scale);
+
+  // ===== background =====
+  ctx.fillStyle = "#2b2b2b";
+  ctx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
+
+  function toScreen(x, y) {
+    return {
+      x: (x - worldLeft) * scale,
+      y: (y - worldTop) * scale
+    };
+  }
+
+  // ===== grid =====
+  const minorStep = SNAP_SIZE;
+  const majorStep = FOUNDATION_SIZE;
+
+  if (scale >= 12) {
+    ctx.strokeStyle = "#1f2a33";
+    ctx.lineWidth = 1;
+
+    for (let x = Math.floor(worldLeft / minorStep) * minorStep; x <= worldRight; x += minorStep) {
+      const sx = toScreen(x, 0).x;
+      ctx.beginPath();
+      ctx.moveTo(sx, 0);
+      ctx.lineTo(sx, exportCanvas.height);
+      ctx.stroke();
+    }
+
+    for (let y = Math.floor(worldTop / minorStep) * minorStep; y <= worldBottom; y += minorStep) {
+      const sy = toScreen(0, y).y;
+      ctx.beginPath();
+      ctx.moveTo(0, sy);
+      ctx.lineTo(exportCanvas.width, sy);
+      ctx.stroke();
+    }
+  }
+
+  ctx.strokeStyle = "#3a4a57";
+
+  for (let x = Math.floor(worldLeft / majorStep) * majorStep; x <= worldRight; x += majorStep) {
+    const sx = toScreen(x, 0).x;
+    ctx.beginPath();
+    ctx.moveTo(sx, 0);
+    ctx.lineTo(sx, exportCanvas.height);
+    ctx.stroke();
+  }
+
+  for (let y = Math.floor(worldTop / majorStep) * majorStep; y <= worldBottom; y += majorStep) {
+    const sy = toScreen(0, y).y;
+    ctx.beginPath();
+    ctx.moveTo(0, sy);
+    ctx.lineTo(exportCanvas.width, sy);
+    ctx.stroke();
+  }
+
+  // ===== machines =====
+  for (const m of state.machines) {
+    const fp = getMachineFootprint(m);
+    const pos = toScreen(m.x, m.y);
+
+    const w = fp.width * scale;
+    const h = fp.length * scale;
+
+    ctx.fillStyle = m.color || "#3a3f47";
+    ctx.fillRect(pos.x, pos.y, w, h);
+
+    const buffers = getMachineBufferRects(m);
+
+    if (buffers.input) {
+      const p = toScreen(buffers.input.left, buffers.input.top);
+      const bw = (buffers.input.right - buffers.input.left) * scale;
+      const bh = (buffers.input.bottom - buffers.input.top) * scale;
+
+      ctx.fillStyle = "rgba(80,200,120,0.22)";
+      ctx.fillRect(p.x, p.y, bw, bh);
+    }
+
+    if (buffers.output) {
+      const p = toScreen(buffers.output.left, buffers.output.top);
+      const bw = (buffers.output.right - buffers.output.left) * scale;
+      const bh = (buffers.output.bottom - buffers.output.top) * scale;
+
+      ctx.fillStyle = "rgba(255,215,0,0.18)";
+      ctx.fillRect(p.x, p.y, bw, bh);
+    }
+
+    ctx.strokeStyle = "#0b0f14";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(pos.x, pos.y, w, h);
+
+    const label = m.recipeName || m.type;
+    if (label) {
+      ctx.fillStyle = "#0b0f14";
+      ctx.font = "14px Arial";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+
+      ctx.fillText(label, pos.x + w / 2, pos.y + h / 2);
+    }
+  }
+
+  const link = document.createElement("a");
+  link.href = exportCanvas.toDataURL("image/png");
+  link.download = "planner_layout.png";
+  link.click();
+}
+
+// 🔥 REQUIRED LINE
+window.exportLayoutPng = exportLayoutPng;
