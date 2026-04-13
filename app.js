@@ -1365,8 +1365,7 @@ function drawOrigin() {
 function drawWrappedMachineLabel(ctx, text, centerX, centerY, maxWidth, maxHeight, fontSize) {
   const lineHeight = fontSize * 1.15;
 
-  // 🔥 NEW: respect manual line breaks
-  const rawLines = text.split("\n");
+  const rawLines = String(text).split("\n");
   const finalLines = [];
 
   for (const rawLine of rawLines) {
@@ -1388,155 +1387,24 @@ function drawWrappedMachineLabel(ctx, text, centerX, centerY, maxWidth, maxHeigh
     }
   }
 
-
-
-  function exportWorldToScreen(wx, wy) {
-    return {
-      x: (wx - worldLeft) * scale,
-      y: (wy - worldTop) * scale
-    };
+  if (finalLines.length === 0) {
+    return;
   }
 
-  // ===== grid =====
-  const minorStep = SNAP_SIZE;          // 0.5m
-  const foundationStep = FOUNDATION_SIZE; // 8m
+  let linesToDraw = finalLines;
 
-  if (scale >= 12) {
-    exportCtx.strokeStyle = "#1f2a33";
-    exportCtx.lineWidth = 1;
-
-    const startXMinor = Math.floor(worldLeft / minorStep) * minorStep;
-    const endXMinor = Math.ceil(worldRight / minorStep) * minorStep;
-    const startYMinor = Math.floor(worldTop / minorStep) * minorStep;
-    const endYMinor = Math.ceil(worldBottom / minorStep) * minorStep;
-
-    for (let x = startXMinor; x <= endXMinor; x += minorStep) {
-      const sx = exportWorldToScreen(x, 0).x;
-      exportCtx.beginPath();
-      exportCtx.moveTo(sx, 0);
-      exportCtx.lineTo(sx, exportCanvas.height);
-      exportCtx.stroke();
-    }
-
-    for (let y = startYMinor; y <= endYMinor; y += minorStep) {
-      const sy = exportWorldToScreen(0, y).y;
-      exportCtx.beginPath();
-      exportCtx.moveTo(0, sy);
-      exportCtx.lineTo(exportCanvas.width, sy);
-      exportCtx.stroke();
-    }
+  while (linesToDraw.length * lineHeight > maxHeight && linesToDraw.length > 1) {
+    linesToDraw = linesToDraw.slice(0, -1);
   }
 
-  exportCtx.strokeStyle = "#3a4a57";
-  exportCtx.lineWidth = 1;
+  const totalHeight = linesToDraw.length * lineHeight;
+  let y = centerY - totalHeight / 2 + lineHeight / 2;
 
-  const startXFoundation = Math.floor(worldLeft / foundationStep) * foundationStep;
-  const endXFoundation = Math.ceil(worldRight / foundationStep) * foundationStep;
-  const startYFoundation = Math.floor(worldTop / foundationStep) * foundationStep;
-  const endYFoundation = Math.ceil(worldBottom / foundationStep) * foundationStep;
-
-  for (let x = startXFoundation; x <= endXFoundation; x += foundationStep) {
-    const sx = exportWorldToScreen(x, 0).x;
-    exportCtx.beginPath();
-    exportCtx.moveTo(sx, 0);
-    exportCtx.lineTo(sx, exportCanvas.height);
-    exportCtx.stroke();
+  for (const line of linesToDraw) {
+    ctx.fillText(line, centerX, y);
+    y += lineHeight;
   }
-
-  for (let y = startYFoundation; y <= endYFoundation; y += foundationStep) {
-    const sy = exportWorldToScreen(0, y).y;
-    exportCtx.beginPath();
-    exportCtx.moveTo(0, sy);
-    exportCtx.lineTo(exportCanvas.width, sy);
-    exportCtx.stroke();
-  }
-
-  // ===== machines =====
-  for (const machine of state.machines) {
-    const footprint = getMachineFootprint(machine);
-    const screenPos = exportWorldToScreen(machine.x, machine.y);
-
-    const widthPx = footprint.width * scale;
-    const heightPx = footprint.length * scale;
-
-    exportCtx.fillStyle = machine.color || "#3a3f47";
-    exportCtx.fillRect(screenPos.x, screenPos.y, widthPx, heightPx);
-
-    const buffers = getMachineBufferRects(machine);
-
-    if (buffers.input) {
-      const topLeft = exportWorldToScreen(buffers.input.left, buffers.input.top);
-      const bufferWidthPx = (buffers.input.right - buffers.input.left) * scale;
-      const bufferHeightPx = (buffers.input.bottom - buffers.input.top) * scale;
-
-      exportCtx.fillStyle = "rgba(80, 200, 120, 0.22)";
-      exportCtx.strokeStyle = "rgba(80, 200, 120, 0.55)";
-      exportCtx.lineWidth = 1;
-      exportCtx.fillRect(topLeft.x, topLeft.y, bufferWidthPx, bufferHeightPx);
-      exportCtx.strokeRect(topLeft.x, topLeft.y, bufferWidthPx, bufferHeightPx);
-    }
-
-    if (buffers.output) {
-      const topLeft = exportWorldToScreen(buffers.output.left, buffers.output.top);
-      const bufferWidthPx = (buffers.output.right - buffers.output.left) * scale;
-      const bufferHeightPx = (buffers.output.bottom - buffers.output.top) * scale;
-
-      exportCtx.fillStyle = "rgba(255, 215, 0, 0.18)";
-      exportCtx.strokeStyle = "rgba(255, 215, 0, 0.45)";
-      exportCtx.lineWidth = 1;
-      exportCtx.fillRect(topLeft.x, topLeft.y, bufferWidthPx, bufferHeightPx);
-      exportCtx.strokeRect(topLeft.x, topLeft.y, bufferWidthPx, bufferHeightPx);
-    }
-
-    exportCtx.strokeStyle = "#0b0f14";
-    exportCtx.lineWidth = 2;
-    exportCtx.strokeRect(screenPos.x, screenPos.y, widthPx, heightPx);
-
-    const labelText = machine.recipeName || machine.type || "";
-    if (labelText) {
-      exportCtx.fillStyle = "#0b0f14";
-      exportCtx.font = "14px Arial";
-      exportCtx.textAlign = "center";
-      exportCtx.textBaseline = "middle";
-
-      drawWrappedMachineLabel(
-        exportCtx,
-        labelText,
-        screenPos.x + widthPx / 2,
-        screenPos.y + heightPx / 2,
-        Math.max(16, widthPx - 12),
-        Math.max(16, heightPx - 12),
-        14
-      );
-
-      exportCtx.textAlign = "start";
-      exportCtx.textBaseline = "alphabetic";
-    }
-
-    if (machine.blockPosition) {
-      exportCtx.fillStyle = "#ffffffcc";
-      exportCtx.font = "10px Arial";
-      exportCtx.textAlign = "right";
-      exportCtx.textBaseline = "bottom";
-
-      exportCtx.fillText(
-        `${machine.blockPosition.row},${machine.blockPosition.col}`,
-        screenPos.x + widthPx - 3,
-        screenPos.y + heightPx - 3
-      );
-
-      exportCtx.textAlign = "start";
-      exportCtx.textBaseline = "alphabetic";
-    }
-  }
-
-  const link = document.createElement("a");
-  link.href = exportCanvas.toDataURL("image/png");
-  link.download = "planner_layout.png";
-  link.click();
 }
-
-window.exportLayoutPng = exportLayoutPng;
 
 function drawGroupLabel(machine, screenPos, widthPx, heightPx) {
   const centerX = screenPos.x + widthPx / 2;
@@ -2454,12 +2322,7 @@ function exportLayoutPng() {
   exportCanvas.width = Math.ceil(worldWidth * scale);
   exportCanvas.height = Math.ceil(worldHeight * scale);
 
-  function exportWorldToScreen(wx, wy) {
-    return {
-      x: (wx - worldLeft) * scale,
-      y: (wy - worldTop) * scale
-    };
-  }
+
 
   exportCtx.clearRect(0, 0, exportCanvas.width, exportCanvas.height);
 
