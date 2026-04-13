@@ -1193,33 +1193,50 @@ function importMachineClusters(rows) {
   const centerWorld = screenToWorld(rect.width / 2, rect.height / 2);
 
   const importedMachines = [];
+
   let cursorX = snap(centerWorld.x);
   let cursorY = snap(centerWorld.y);
+  let currentRowHeight = 0;
+
+  const gap = 8;
+  const maxRowWidth = 200;
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
     if (!row.block || !row.machineName || !row.recipeName) continue;
 
-    const clusterMachines = findOpenClusterPlacement(row, cursorX, cursorY, i, 120);
+    const blockWidth = row.block.width;
+    const blockHeight = row.block.length;
+
+    // wrap to next row
+    if (cursorX + blockWidth > centerWorld.x + maxRowWidth) {
+      cursorX = snap(centerWorld.x);
+      cursorY = snap(cursorY + currentRowHeight + gap);
+      currentRowHeight = 0;
+    }
+
+    const clusterMachines = buildClusterMachinesFromRow(row, cursorX, cursorY, i);
+
     if (!clusterMachines || clusterMachines.length === 0) {
-      console.warn("Skipped row during import:", row.recipeName, row.machineName, row.roundedMachines);
+      console.warn("Still failed to build cluster:", row.recipeName);
       continue;
     }
 
     importedMachines.push(...clusterMachines);
 
-    const clusterBounds = getClusterBounds(clusterMachines);
-    cursorX = snap(clusterBounds.right + 4);
+    cursorX = snap(cursorX + blockWidth + gap);
+    currentRowHeight = Math.max(currentRowHeight, blockHeight);
   }
 
   if (importedMachines.length === 0) {
     throw new Error("No valid machine clusters were imported.");
   }
+
   state.machines = [];
   state.machines.push(...importedMachines);
 
   clearSelection();
-  setSelection(importedMachines.map(machine => machine.id));
+  setSelection(importedMachines.map(m => m.id));
 
   updateSelectedInfo();
   draw();
