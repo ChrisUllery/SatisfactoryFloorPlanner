@@ -4,6 +4,16 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Satisfactory Floor Planner</title>
+
+  <!-- Google Analytics -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-T5HRJ5LG8W"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-T5HRJ5LG8W');
+  </script>
+
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -34,7 +44,6 @@
         </div>
       </section>
 
-      <!-- 🔥 IMPORT + EXPORT PANEL -->
       <section class="panel">
         <h2>Import / Export</h2>
         <div class="machine-picker">
@@ -105,13 +114,16 @@
 
   <script src="app.js"></script>
 
-  <!-- 🔥 EXPORT LOGIC -->
   <script>
-    // ===== EXPORT JSON =====
     const exportPlannerBtn = document.getElementById("exportPlannerBtn");
+    const exportLayoutPngBtn = document.getElementById("exportLayoutPngBtn");
 
     if (exportPlannerBtn) {
       exportPlannerBtn.addEventListener("click", () => {
+        if (typeof gtag === "function") {
+          gtag("event", "export_planner_json");
+        }
+
         if (!window.getPlannerState) {
           console.error("getPlannerState not found");
           return;
@@ -134,11 +146,12 @@
       });
     }
 
-    // ===== EXPORT PNG =====
-    const exportLayoutPngBtn = document.getElementById("exportLayoutPngBtn");
-
     if (exportLayoutPngBtn) {
       exportLayoutPngBtn.addEventListener("click", () => {
+        if (typeof gtag === "function") {
+          gtag("event", "export_layout_png");
+        }
+
         if (typeof exportLayoutPng === "function") {
           exportLayoutPng();
         } else {
@@ -147,6 +160,5 @@
       });
     }
   </script>
-
 </body>
 </html>
