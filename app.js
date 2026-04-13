@@ -1148,7 +1148,7 @@ function canPlaceImportedCluster(clusterMachines, extraMachines = []) {
   const blockers = [...state.machines, ...extraMachines];
 
   for (const machine of clusterMachines) {
-    if (wouldMachineOverlap(machine, machine.x, machine.y, machine.rotation)) {
+    if (wouldMachineOverlap(machine, machine.x, machine.y, machine.rotation, []))
       return false;
     }
 
