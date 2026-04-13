@@ -1238,7 +1238,13 @@ function importMachineClusters(rows) {
         currentRowHeight = 0;
       }
 
-      const candidateCluster = buildClusterMachinesFromRow(row, cursorX, cursorY, i);
+      const candidateCluster = findOpenClusterPlacement(
+        row,
+        cursorX,
+        cursorY,
+        i,
+        importedMachines
+      );
 
       if (candidateCluster.length > 0 && canPlaceImportedCluster(candidateCluster, importedMachines)) {
         placedCluster = candidateCluster;
