@@ -20,7 +20,6 @@
         </div>
       </section>
 
-      <!-- 🔥 UPDATED PANEL -->
       <section class="panel">
         <h2>Recipe Palette</h2>
         <div class="machine-picker">
@@ -35,11 +34,13 @@
         </div>
       </section>
 
+      <!-- 🔥 IMPORT + EXPORT PANEL -->
       <section class="panel">
-        <h2>Import Factory Data</h2>
+        <h2>Import / Export</h2>
         <div class="machine-picker">
           <input id="importFactoryFile" type="file" accept=".sfmd,.json" />
           <button id="importFactoryBtn" type="button">Import File</button>
+          <button id="exportPlannerBtn" type="button">Export Planner</button>
         </div>
         <p class="subhead" style="margin-top: 12px; margin-bottom: 0;">
           Import either a parser JSON file or a Satisfactory Modeler .sfmd save file.
@@ -102,5 +103,31 @@
   </div>
 
   <script src="app.js"></script>
+
+  <!-- 🔥 EXPORT LOGIC -->
+  <script>
+    document.getElementById("exportPlannerBtn").addEventListener("click", () => {
+      if (!window.getPlannerState) {
+        console.error("getPlannerState not found");
+        return;
+      }
+
+      const data = window.getPlannerState();
+
+      const blob = new Blob([JSON.stringify(data, null, 2)], {
+        type: "application/json"
+      });
+
+      const url = URL.createObjectURL(blob);
+
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "planner_layout.json";
+      a.click();
+
+      URL.revokeObjectURL(url);
+    });
+  </script>
+
 </body>
 </html>
