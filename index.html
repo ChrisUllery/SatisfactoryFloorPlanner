@@ -40,7 +40,8 @@
         <div class="machine-picker">
           <input id="importFactoryFile" type="file" accept=".sfmd,.json" />
           <button id="importFactoryBtn" type="button">Import File</button>
-          <button id="exportPlannerBtn" type="button">Export Planner</button>
+          <button id="exportPlannerBtn" type="button">Export Planner JSON</button>
+          <button id="exportLayoutPngBtn" type="button">Export Layout PNG</button>
         </div>
         <p class="subhead" style="margin-top: 12px; margin-bottom: 0;">
           Import either a parser JSON file or a Satisfactory Modeler .sfmd save file.
@@ -106,27 +107,45 @@
 
   <!-- 🔥 EXPORT LOGIC -->
   <script>
-    document.getElementById("exportPlannerBtn").addEventListener("click", () => {
-      if (!window.getPlannerState) {
-        console.error("getPlannerState not found");
-        return;
-      }
+    // ===== EXPORT JSON =====
+    const exportPlannerBtn = document.getElementById("exportPlannerBtn");
 
-      const data = window.getPlannerState();
+    if (exportPlannerBtn) {
+      exportPlannerBtn.addEventListener("click", () => {
+        if (!window.getPlannerState) {
+          console.error("getPlannerState not found");
+          return;
+        }
 
-      const blob = new Blob([JSON.stringify(data, null, 2)], {
-        type: "application/json"
+        const data = window.getPlannerState();
+
+        const blob = new Blob([JSON.stringify(data, null, 2)], {
+          type: "application/json"
+        });
+
+        const url = URL.createObjectURL(blob);
+
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "planner_layout.json";
+        a.click();
+
+        URL.revokeObjectURL(url);
       });
+    }
 
-      const url = URL.createObjectURL(blob);
+    // ===== EXPORT PNG =====
+    const exportLayoutPngBtn = document.getElementById("exportLayoutPngBtn");
 
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "planner_layout.json";
-      a.click();
-
-      URL.revokeObjectURL(url);
-    });
+    if (exportLayoutPngBtn) {
+      exportLayoutPngBtn.addEventListener("click", () => {
+        if (typeof exportLayoutPng === "function") {
+          exportLayoutPng();
+        } else {
+          console.error("exportLayoutPng function not found in app.js");
+        }
+      });
+    }
   </script>
 
 </body>
