@@ -2454,7 +2454,6 @@ function exportLayoutPng() {
   exportCanvas.width = Math.ceil(width * scale);
   exportCanvas.height = Math.ceil(height * scale);
 
-  // ===== background =====
   ctx.fillStyle = "#2b2b2b";
   ctx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
 
@@ -2465,7 +2464,6 @@ function exportLayoutPng() {
     };
   }
 
-  // ===== grid =====
   const minorStep = SNAP_SIZE;
   const majorStep = FOUNDATION_SIZE;
 
@@ -2491,6 +2489,7 @@ function exportLayoutPng() {
   }
 
   ctx.strokeStyle = "#3a4a57";
+  ctx.lineWidth = 1;
 
   for (let x = Math.floor(worldLeft / majorStep) * majorStep; x <= worldRight; x += majorStep) {
     const sx = toScreen(x, 0).x;
@@ -2508,7 +2507,6 @@ function exportLayoutPng() {
     ctx.stroke();
   }
 
-  // ===== machines =====
   for (const m of state.machines) {
     const fp = getMachineFootprint(m);
     const pos = toScreen(m.x, m.y);
@@ -2549,7 +2547,6 @@ function exportLayoutPng() {
       ctx.font = "14px Arial";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-
       ctx.fillText(label, pos.x + w / 2, pos.y + h / 2);
     }
   }
@@ -2560,5 +2557,4 @@ function exportLayoutPng() {
   link.click();
 }
 
-// 🔥 REQUIRED LINE
 window.exportLayoutPng = exportLayoutPng;
