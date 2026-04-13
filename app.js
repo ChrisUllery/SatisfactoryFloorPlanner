@@ -2059,10 +2059,10 @@ canvas.addEventListener("mousemove", event => {
           const a = proposals[i];
           const b = proposals[j];
 
-          const aRects = getMachineOccupiedRects(a.machine, a.x, a.y, a.machine.rotation);
-          const bRects = getMachineOccupiedRects(b.machine, b.x, b.y, b.machine.rotation);
+          const aBounds = getMachineBounds(a.machine, a.x, a.y, a.machine.rotation);
+          const bBounds = getMachineBounds(b.machine, b.x, b.y, b.machine.rotation);
 
-          if (rectSetsOverlap(aRects, bRects)) {
+          if (rectanglesOverlap(aBounds, bBounds)) {
             return null;
           }
         }
