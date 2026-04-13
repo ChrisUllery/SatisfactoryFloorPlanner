@@ -2011,9 +2011,11 @@ canvas.addEventListener("contextmenu", event => {
   event.preventDefault();
 });
 
-exportSummaryPdfBtn.addEventListener("click", () => {
-  exportSummaryPdf();
-});
+if (exportSummaryPdfBtn) {
+  exportSummaryPdfBtn.addEventListener("click", () => {
+    exportSummaryPdf();
+  });
+}
 
 canvas.addEventListener(
   "wheel",
