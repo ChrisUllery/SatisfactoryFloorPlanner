@@ -2271,7 +2271,16 @@ window.addEventListener("keydown", event => {
     deleteSelectedMachines();
   }
 });
-
+window.getPlannerState = function () {
+  return JSON.parse(JSON.stringify({
+    camera: state.camera,
+    machines: state.machines,
+    selectedMachineIds: state.selectedMachineIds,
+    clipboard: state.clipboard,
+    viewMode: state.viewMode,
+    lastImportedRows: state.lastImportedRows
+  }));
+};
 window.addEventListener("resize", resizeCanvas);
 
 loadMachineCatalog().then(() => {
