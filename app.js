@@ -1094,13 +1094,8 @@ function buildClusterMachinesFromRow(row, anchorX, anchorY, blockIndex) {
   const blockId = crypto.randomUUID();
   const machines = [];
 
-  const rotation = 0;
-  const isTallAtDefault = def.width <= def.length;
-
-  // If ports are top/bottom, add spacing between rows.
-  // If ports are left/right, add spacing between columns.
-  const rowGap = isTallAtDefault ? 2 : 0;
-  const colGap = isTallAtDefault ? 0 : 2;
+  const rowGap = 2;
+  const colGap = 0;
 
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
