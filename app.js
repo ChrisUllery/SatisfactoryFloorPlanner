@@ -1387,7 +1387,110 @@ function drawWrappedMachineLabel(ctx, text, centerX, centerY, maxWidth, maxHeigh
       finalLines.push(currentLine);
     }
   }
+function exportLayoutPng() {
+  if (!state.machines || state.machines.length === 0) {
+    alert("There is no layout to export yet.");
+    return;
+  }
 
+  const exportCanvas = document.createElement("canvas");
+  const exportCtx = exportCanvas.getContext("2d");
+
+  const boundsList = state.machines.map(machine => getMachineBounds(machine));
+
+  const minX = Math.min(...boundsList.map(b => b.left));
+  const minY = Math.min(...boundsList.map(b => b.top));
+  const maxX = Math.max(...boundsList.map(b => b.right));
+  const maxY = Math.max(...boundsList.map(b => b.bottom));
+
+  const padding = 4;
+  const scale = 20;
+
+  const worldWidth = (maxX - minX) + padding * 2;
+  const worldHeight = (maxY - minY) + padding * 2;
+
+  exportCanvas.width = Math.ceil(worldWidth * scale);
+  exportCanvas.height = Math.ceil(worldHeight * scale);
+
+  exportCtx.fillStyle = "#2b2b2b";
+  exportCtx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
+
+  function exportWorldToScreen(wx, wy) {
+    return {
+      x: (wx - minX + padding) * scale,
+      y: (wy - minY + padding) * scale
+    };
+  }
+
+  for (const machine of state.machines) {
+    const footprint = getMachineFootprint(machine);
+    const screenPos = exportWorldToScreen(machine.x, machine.y);
+
+    const widthPx = footprint.width * scale;
+    const heightPx = footprint.length * scale;
+
+    exportCtx.fillStyle = machine.color || "#3a3f47";
+    exportCtx.fillRect(screenPos.x, screenPos.y, widthPx, heightPx);
+
+    const buffers = getMachineBufferRects(machine);
+
+    if (buffers.input) {
+      const topLeft = exportWorldToScreen(buffers.input.left, buffers.input.top);
+      const bufferWidthPx = (buffers.input.right - buffers.input.left) * scale;
+      const bufferHeightPx = (buffers.input.bottom - buffers.input.top) * scale;
+
+      exportCtx.fillStyle = "rgba(80, 200, 120, 0.22)";
+      exportCtx.strokeStyle = "rgba(80, 200, 120, 0.55)";
+      exportCtx.lineWidth = 1;
+      exportCtx.fillRect(topLeft.x, topLeft.y, bufferWidthPx, bufferHeightPx);
+      exportCtx.strokeRect(topLeft.x, topLeft.y, bufferWidthPx, bufferHeightPx);
+    }
+
+    if (buffers.output) {
+      const topLeft = exportWorldToScreen(buffers.output.left, buffers.output.top);
+      const bufferWidthPx = (buffers.output.right - buffers.output.left) * scale;
+      const bufferHeightPx = (buffers.output.bottom - buffers.output.top) * scale;
+
+      exportCtx.fillStyle = "rgba(255, 215, 0, 0.18)";
+      exportCtx.strokeStyle = "rgba(255, 215, 0, 0.45)";
+      exportCtx.lineWidth = 1;
+      exportCtx.fillRect(topLeft.x, topLeft.y, bufferWidthPx, bufferHeightPx);
+      exportCtx.strokeRect(topLeft.x, topLeft.y, bufferWidthPx, bufferHeightPx);
+    }
+
+    exportCtx.strokeStyle = "#0b0f14";
+    exportCtx.lineWidth = 2;
+    exportCtx.strokeRect(screenPos.x, screenPos.y, widthPx, heightPx);
+
+    const labelText = machine.recipeName || machine.type || "";
+    if (labelText) {
+      exportCtx.fillStyle = "#0b0f14";
+      exportCtx.font = "14px Arial";
+      exportCtx.textAlign = "center";
+      exportCtx.textBaseline = "middle";
+
+      drawWrappedMachineLabel(
+        exportCtx,
+        labelText,
+        screenPos.x + widthPx / 2,
+        screenPos.y + heightPx / 2,
+        Math.max(16, widthPx - 12),
+        Math.max(16, heightPx - 12),
+        14
+      );
+
+      exportCtx.textAlign = "start";
+      exportCtx.textBaseline = "alphabetic";
+    }
+  }
+
+  const link = document.createElement("a");
+  link.href = exportCanvas.toDataURL("image/png");
+  link.download = "planner_layout.png";
+  link.click();
+}
+
+window.exportLayoutPng = exportLayoutPng;
   const totalHeight = finalLines.length * lineHeight;
 
   // fallback if too tall
