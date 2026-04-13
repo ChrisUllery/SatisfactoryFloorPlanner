@@ -1085,18 +1085,25 @@ function buildClusterMachinesFromRow(row, anchorX, anchorY, blockIndex) {
   const rows = row.block.rows || 1;
   const cols = row.block.cols || 1;
   const count = row.roundedMachines || rows * cols;
-  const gap = 1;
 
   const blockId = crypto.randomUUID();
   const machines = [];
+
+  const rotation = 0;
+  const isTallAtDefault = def.width <= def.length;
+
+  // If ports are top/bottom, add spacing between rows.
+  // If ports are left/right, add spacing between columns.
+  const rowGap = isTallAtDefault ? 2 : 0;
+  const colGap = isTallAtDefault ? 0 : 2;
 
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
       const index = r * cols + c;
       if (index >= count) break;
 
-      const x = snap(anchorX + c * (def.width + gap));
-      const y = snap(anchorY + r * (def.length + gap));
+      const x = snap(anchorX + c * (def.width + colGap));
+      const y = snap(anchorY + r * (def.length + rowGap));
 
       machines.push(
         createImportedMachine(row.machineName, x, y, {
