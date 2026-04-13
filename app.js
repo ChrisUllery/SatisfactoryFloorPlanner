@@ -2431,9 +2431,9 @@ function exportLayoutPng() {
   }
 
   const exportCanvas = document.createElement("canvas");
-  const ctx = exportCanvas.getContext("2d");
+  const exportCtx = exportCanvas.getContext("2d");
 
-  const boundsList = state.machines.map(m => getMachineBounds(m));
+  const boundsList = state.machines.map(machine => getMachineBounds(machine));
 
   const minX = Math.min(...boundsList.map(b => b.left));
   const minY = Math.min(...boundsList.map(b => b.top));
@@ -2448,106 +2448,155 @@ function exportLayoutPng() {
   const worldRight = maxX + padding;
   const worldBottom = maxY + padding;
 
-  const width = worldRight - worldLeft;
-  const height = worldBottom - worldTop;
+  const worldWidth = worldRight - worldLeft;
+  const worldHeight = worldBottom - worldTop;
 
-  exportCanvas.width = Math.ceil(width * scale);
-  exportCanvas.height = Math.ceil(height * scale);
+  exportCanvas.width = Math.ceil(worldWidth * scale);
+  exportCanvas.height = Math.ceil(worldHeight * scale);
 
-  ctx.fillStyle = "#2b2b2b";
-  ctx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
-
-  function toScreen(x, y) {
+  function exportWorldToScreen(wx, wy) {
     return {
-      x: (x - worldLeft) * scale,
-      y: (y - worldTop) * scale
+      x: (wx - worldLeft) * scale,
+      y: (wy - worldTop) * scale
     };
   }
 
+  exportCtx.clearRect(0, 0, exportCanvas.width, exportCanvas.height);
+
+  // ===== background =====
+  exportCtx.fillStyle = "#2b2b2b";
+  exportCtx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
+
+  // ===== grid =====
   const minorStep = SNAP_SIZE;
-  const majorStep = FOUNDATION_SIZE;
+  const foundationStep = FOUNDATION_SIZE;
 
   if (scale >= 12) {
-    ctx.strokeStyle = "#1f2a33";
-    ctx.lineWidth = 1;
+    exportCtx.strokeStyle = "#1f2a33";
+    exportCtx.lineWidth = 1;
 
-    for (let x = Math.floor(worldLeft / minorStep) * minorStep; x <= worldRight; x += minorStep) {
-      const sx = toScreen(x, 0).x;
-      ctx.beginPath();
-      ctx.moveTo(sx, 0);
-      ctx.lineTo(sx, exportCanvas.height);
-      ctx.stroke();
+    const startXMinor = Math.floor(worldLeft / minorStep) * minorStep;
+    const endXMinor = Math.ceil(worldRight / minorStep) * minorStep;
+    const startYMinor = Math.floor(worldTop / minorStep) * minorStep;
+    const endYMinor = Math.ceil(worldBottom / minorStep) * minorStep;
+
+    for (let x = startXMinor; x <= endXMinor; x += minorStep) {
+      const sx = exportWorldToScreen(x, 0).x;
+      exportCtx.beginPath();
+      exportCtx.moveTo(sx, 0);
+      exportCtx.lineTo(sx, exportCanvas.height);
+      exportCtx.stroke();
     }
 
-    for (let y = Math.floor(worldTop / minorStep) * minorStep; y <= worldBottom; y += minorStep) {
-      const sy = toScreen(0, y).y;
-      ctx.beginPath();
-      ctx.moveTo(0, sy);
-      ctx.lineTo(exportCanvas.width, sy);
-      ctx.stroke();
+    for (let y = startYMinor; y <= endYMinor; y += minorStep) {
+      const sy = exportWorldToScreen(0, y).y;
+      exportCtx.beginPath();
+      exportCtx.moveTo(0, sy);
+      exportCtx.lineTo(exportCanvas.width, sy);
+      exportCtx.stroke();
     }
   }
 
-  ctx.strokeStyle = "#3a4a57";
-  ctx.lineWidth = 1;
+  exportCtx.strokeStyle = "#3a4a57";
+  exportCtx.lineWidth = 1;
 
-  for (let x = Math.floor(worldLeft / majorStep) * majorStep; x <= worldRight; x += majorStep) {
-    const sx = toScreen(x, 0).x;
-    ctx.beginPath();
-    ctx.moveTo(sx, 0);
-    ctx.lineTo(sx, exportCanvas.height);
-    ctx.stroke();
+  const startXFoundation = Math.floor(worldLeft / foundationStep) * foundationStep;
+  const endXFoundation = Math.ceil(worldRight / foundationStep) * foundationStep;
+  const startYFoundation = Math.floor(worldTop / foundationStep) * foundationStep;
+  const endYFoundation = Math.ceil(worldBottom / foundationStep) * foundationStep;
+
+  for (let x = startXFoundation; x <= endXFoundation; x += foundationStep) {
+    const sx = exportWorldToScreen(x, 0).x;
+    exportCtx.beginPath();
+    exportCtx.moveTo(sx, 0);
+    exportCtx.lineTo(sx, exportCanvas.height);
+    exportCtx.stroke();
   }
 
-  for (let y = Math.floor(worldTop / majorStep) * majorStep; y <= worldBottom; y += majorStep) {
-    const sy = toScreen(0, y).y;
-    ctx.beginPath();
-    ctx.moveTo(0, sy);
-    ctx.lineTo(exportCanvas.width, sy);
-    ctx.stroke();
+  for (let y = startYFoundation; y <= endYFoundation; y += foundationStep) {
+    const sy = exportWorldToScreen(0, y).y;
+    exportCtx.beginPath();
+    exportCtx.moveTo(0, sy);
+    exportCtx.lineTo(exportCanvas.width, sy);
+    exportCtx.stroke();
   }
 
-  for (const m of state.machines) {
-    const fp = getMachineFootprint(m);
-    const pos = toScreen(m.x, m.y);
+  // ===== machines =====
+  for (const machine of state.machines) {
+    const footprint = getMachineFootprint(machine);
+    const screenPos = exportWorldToScreen(machine.x, machine.y);
 
-    const w = fp.width * scale;
-    const h = fp.length * scale;
+    const widthPx = footprint.width * scale;
+    const heightPx = footprint.length * scale;
 
-    ctx.fillStyle = m.color || "#3a3f47";
-    ctx.fillRect(pos.x, pos.y, w, h);
+    exportCtx.fillStyle = machine.color || "#3a3f47";
+    exportCtx.fillRect(screenPos.x, screenPos.y, widthPx, heightPx);
 
-    const buffers = getMachineBufferRects(m);
+    const buffers = getMachineBufferRects(machine);
 
     if (buffers.input) {
-      const p = toScreen(buffers.input.left, buffers.input.top);
-      const bw = (buffers.input.right - buffers.input.left) * scale;
-      const bh = (buffers.input.bottom - buffers.input.top) * scale;
+      const topLeft = exportWorldToScreen(buffers.input.left, buffers.input.top);
+      const bufferWidthPx = (buffers.input.right - buffers.input.left) * scale;
+      const bufferHeightPx = (buffers.input.bottom - buffers.input.top) * scale;
 
-      ctx.fillStyle = "rgba(80,200,120,0.22)";
-      ctx.fillRect(p.x, p.y, bw, bh);
+      exportCtx.fillStyle = "rgba(80, 200, 120, 0.22)";
+      exportCtx.strokeStyle = "rgba(80, 200, 120, 0.55)";
+      exportCtx.lineWidth = 1;
+      exportCtx.fillRect(topLeft.x, topLeft.y, bufferWidthPx, bufferHeightPx);
+      exportCtx.strokeRect(topLeft.x, topLeft.y, bufferWidthPx, bufferHeightPx);
     }
 
     if (buffers.output) {
-      const p = toScreen(buffers.output.left, buffers.output.top);
-      const bw = (buffers.output.right - buffers.output.left) * scale;
-      const bh = (buffers.output.bottom - buffers.output.top) * scale;
+      const topLeft = exportWorldToScreen(buffers.output.left, buffers.output.top);
+      const bufferWidthPx = (buffers.output.right - buffers.output.left) * scale;
+      const bufferHeightPx = (buffers.output.bottom - buffers.output.top) * scale;
 
-      ctx.fillStyle = "rgba(255,215,0,0.18)";
-      ctx.fillRect(p.x, p.y, bw, bh);
+      exportCtx.fillStyle = "rgba(255, 215, 0, 0.18)";
+      exportCtx.strokeStyle = "rgba(255, 215, 0, 0.45)";
+      exportCtx.lineWidth = 1;
+      exportCtx.fillRect(topLeft.x, topLeft.y, bufferWidthPx, bufferHeightPx);
+      exportCtx.strokeRect(topLeft.x, topLeft.y, bufferWidthPx, bufferHeightPx);
     }
 
-    ctx.strokeStyle = "#0b0f14";
-    ctx.lineWidth = 2;
-    ctx.strokeRect(pos.x, pos.y, w, h);
+    exportCtx.strokeStyle = "#0b0f14";
+    exportCtx.lineWidth = 2;
+    exportCtx.strokeRect(screenPos.x, screenPos.y, widthPx, heightPx);
 
-    const label = m.recipeName || m.type;
-    if (label) {
-      ctx.fillStyle = "#0b0f14";
-      ctx.font = "14px Arial";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText(label, pos.x + w / 2, pos.y + h / 2);
+    const labelText = machine.recipeName || machine.type || "";
+    if (labelText) {
+      exportCtx.fillStyle = "#0b0f14";
+      exportCtx.font = "14px Arial";
+      exportCtx.textAlign = "center";
+      exportCtx.textBaseline = "middle";
+
+      drawWrappedMachineLabel(
+        exportCtx,
+        labelText,
+        screenPos.x + widthPx / 2,
+        screenPos.y + heightPx / 2,
+        Math.max(16, widthPx - 12),
+        Math.max(16, heightPx - 12),
+        14
+      );
+
+      exportCtx.textAlign = "start";
+      exportCtx.textBaseline = "alphabetic";
+    }
+
+    if (machine.blockPosition) {
+      exportCtx.fillStyle = "#ffffffcc";
+      exportCtx.font = "10px Arial";
+      exportCtx.textAlign = "right";
+      exportCtx.textBaseline = "bottom";
+
+      exportCtx.fillText(
+        `${machine.blockPosition.row},${machine.blockPosition.col}`,
+        screenPos.x + widthPx - 3,
+        screenPos.y + heightPx - 3
+      );
+
+      exportCtx.textAlign = "start";
+      exportCtx.textBaseline = "alphabetic";
     }
   }
 
