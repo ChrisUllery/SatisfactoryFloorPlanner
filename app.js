@@ -932,14 +932,14 @@ function renderSummaryTable(rows) {
 
 function drawSummaryPreview(rows) {
   if (!summaryPreviewCanvas || !summaryPreviewCtx) return;
-  const canvasWidth = summaryPreviewCanvas.width;
-  const canvasHeight = summaryPreviewCanvas.height;
-
-  summaryPreviewCtx.clearRect(0, 0, canvasWidth, canvasHeight);
-  summaryPreviewCtx.fillStyle = "#0c1117";
-  summaryPreviewCtx.fillRect(0, 0, canvasWidth, canvasHeight);
 
   if (!rows.length) {
+    summaryPreviewCanvas.width = 1400;
+    summaryPreviewCanvas.height = 900;
+
+    summaryPreviewCtx.clearRect(0, 0, summaryPreviewCanvas.width, summaryPreviewCanvas.height);
+    summaryPreviewCtx.fillStyle = "#0c1117";
+    summaryPreviewCtx.fillRect(0, 0, summaryPreviewCanvas.width, summaryPreviewCanvas.height);
     summaryPreviewCtx.fillStyle = "#9fb0c2";
     summaryPreviewCtx.font = "20px Arial";
     summaryPreviewCtx.fillText("No blocks to draw yet.", 30, 50);
@@ -948,28 +948,23 @@ function drawSummaryPreview(rows) {
 
   const padding = 30;
   const blockGapMeters = 4;
-
-  const maxBlockWidth = Math.max(...rows.map(r => r.block.width));
-  const maxBlockLength = Math.max(...rows.map(r => r.block.length));
-
-  const usableWidth = canvasWidth - padding * 2;
-  const usableHeight = canvasHeight - padding * 2;
-
-  const scaleX = usableWidth / Math.max(maxBlockWidth * 4, 120);
-  const scaleY = usableHeight / Math.max(maxBlockLength * 6, 120);
-  const scale = Math.max(6, Math.min(scaleX, scaleY));
-
-  const itemGapPx = blockGapMeters * scale;
   const labelLineHeight = 22;
   const labelBlockGap = 8;
   const labelLines = 4;
   const labelHeight = labelLines * labelLineHeight;
+  const minCanvasWidth = 1400;
 
-  let x = padding;
-  let y = padding;
-  let currentRowHeight = 0;
+  const maxBlockWidth = Math.max(...rows.map(r => r.block.width));
+  const maxBlockLength = Math.max(...rows.map(r => r.block.length));
 
-  for (const row of rows) {
+  const usableWidth = minCanvasWidth - padding * 2;
+  const scaleX = usableWidth / Math.max(maxBlockWidth * 4, 120);
+  const scaleY = 900 / Math.max(maxBlockLength * 6, 120);
+  const scale = Math.max(6, Math.min(scaleX, scaleY));
+
+  const itemGapPx = blockGapMeters * scale;
+
+  const measuredItems = rows.map(row => {
     const drawWidth = row.block.width * scale;
     const drawHeight = row.block.length * scale;
 
@@ -990,7 +985,49 @@ function drawSummaryPreview(rows) {
     const itemWidth = Math.max(drawWidth, labelWidth);
     const itemHeight = labelHeight + labelBlockGap + drawHeight;
 
-    if (x + itemWidth > canvasWidth - padding) {
+    return {
+      row,
+      drawWidth,
+      drawHeight,
+      line1,
+      line2,
+      line3,
+      line4,
+      itemWidth,
+      itemHeight
+    };
+  });
+
+  let x = padding;
+  let y = padding;
+  let currentRowHeight = 0;
+
+  for (const item of measuredItems) {
+    if (x + item.itemWidth > minCanvasWidth - padding) {
+      x = padding;
+      y += currentRowHeight + itemGapPx;
+      currentRowHeight = 0;
+    }
+
+    currentRowHeight = Math.max(currentRowHeight, item.itemHeight);
+    x += item.itemWidth + itemGapPx;
+  }
+
+  const neededHeight = Math.max(900, Math.ceil(y + currentRowHeight + padding));
+
+  summaryPreviewCanvas.width = minCanvasWidth;
+  summaryPreviewCanvas.height = neededHeight;
+
+  summaryPreviewCtx.clearRect(0, 0, summaryPreviewCanvas.width, summaryPreviewCanvas.height);
+  summaryPreviewCtx.fillStyle = "#0c1117";
+  summaryPreviewCtx.fillRect(0, 0, summaryPreviewCanvas.width, summaryPreviewCanvas.height);
+
+  x = padding;
+  y = padding;
+  currentRowHeight = 0;
+
+  for (const item of measuredItems) {
+    if (x + item.itemWidth > summaryPreviewCanvas.width - padding) {
       x = padding;
       y += currentRowHeight + itemGapPx;
       currentRowHeight = 0;
@@ -1003,22 +1040,22 @@ function drawSummaryPreview(rows) {
 
     summaryPreviewCtx.fillStyle = "#e8eef5";
     summaryPreviewCtx.font = "bold 16px Arial";
-    summaryPreviewCtx.fillText(line1, labelX, labelY + 18);
+    summaryPreviewCtx.fillText(item.line1, labelX, labelY + 18);
 
     summaryPreviewCtx.fillStyle = "#9fb0c2";
     summaryPreviewCtx.font = "14px Arial";
-    summaryPreviewCtx.fillText(line2, labelX, labelY + 18 + labelLineHeight);
-    summaryPreviewCtx.fillText(line3, labelX, labelY + 18 + labelLineHeight * 2);
-    summaryPreviewCtx.fillText(line4, labelX, labelY + 18 + labelLineHeight * 3);
+    summaryPreviewCtx.fillText(item.line2, labelX, labelY + 18 + labelLineHeight);
+    summaryPreviewCtx.fillText(item.line3, labelX, labelY + 18 + labelLineHeight * 2);
+    summaryPreviewCtx.fillText(item.line4, labelX, labelY + 18 + labelLineHeight * 3);
 
     summaryPreviewCtx.fillStyle = "#243446";
     summaryPreviewCtx.strokeStyle = "#6fc2ff";
     summaryPreviewCtx.lineWidth = 2;
-    summaryPreviewCtx.fillRect(rectX, rectY, drawWidth, drawHeight);
-    summaryPreviewCtx.strokeRect(rectX, rectY, drawWidth, drawHeight);
+    summaryPreviewCtx.fillRect(rectX, rectY, item.drawWidth, item.drawHeight);
+    summaryPreviewCtx.strokeRect(rectX, rectY, item.drawWidth, item.drawHeight);
 
-    x += itemWidth + itemGapPx;
-    currentRowHeight = Math.max(currentRowHeight, itemHeight);
+    x += item.itemWidth + itemGapPx;
+    currentRowHeight = Math.max(currentRowHeight, item.itemHeight);
   }
 }
 
