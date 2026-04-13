@@ -1095,7 +1095,7 @@ function buildClusterMachinesFromRow(row, anchorX, anchorY, blockIndex) {
   const machines = [];
 
   const rowGap = 2;
-  const colGap = 0;
+  const colGap = 2;
 
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
@@ -1141,13 +1141,12 @@ function getClusterBounds(machines) {
 
 function canPlaceImportedCluster(clusterMachines, extraMachines = []) {
   const blockers = [...state.machines, ...extraMachines];
+  const clusterIds = new Set(clusterMachines.map(machine => machine.id));
 
   for (const machine of clusterMachines) {
-    if (wouldMachineOverlap(machine, machine.x, machine.y, machine.rotation, [])) {
-      return false;
-    }
-
     for (const other of blockers) {
+      if (!other || clusterIds.has(other.id)) continue;
+
       const aRects = getMachineOccupiedRects(machine);
       const bRects = getMachineOccupiedRects(other);
 
@@ -1156,6 +1155,9 @@ function canPlaceImportedCluster(clusterMachines, extraMachines = []) {
       }
     }
   }
+
+  return true;
+}
 
   for (let i = 0; i < clusterMachines.length; i++) {
     for (let j = i + 1; j < clusterMachines.length; j++) {
@@ -1246,12 +1248,11 @@ function importMachineClusters(rows) {
         importedMachines
       );
 
-      if (candidateCluster.length > 0 && canPlaceImportedCluster(candidateCluster, importedMachines)) {
+      if (candidateCluster && candidateCluster.length > 0) {
         placedCluster = candidateCluster;
         break;
       }
 
-      // move to next row and try again
       cursorX = snap(centerWorld.x);
       cursorY = snap(cursorY + Math.max(currentRowHeight, estimatedBlockHeight) + gap);
       currentRowHeight = 0;
