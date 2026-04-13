@@ -1274,10 +1274,21 @@ importFactoryBtn.addEventListener("click", async () => {
       const payload = await readJsonFile(file);
       rows = normalizeImportedRows(payload);
     }
+
+    if (typeof gtag === "function") {
+      gtag("event", "import_success", {
+        file_type: file.name.toLowerCase().endsWith(".sfmd") ? "sfmd" : "json"
+      });
+    }
+
     state.lastImportedRows = rows;
     renderSummaryView(rows);
     importMachineClusters(rows);
   } catch (error) {
+    if (typeof gtag === "function") {
+      gtag("event", "import_failure");
+    }
+
     console.error(error);
     alert(error.message);
   }
