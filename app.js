@@ -1219,40 +1219,51 @@ function importMachineClusters(rows) {
 
   const gap = 8;
   const maxRowWidth = 200;
+  const maxRowAttempts = Math.max(rows.length * 4, 40);
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
     if (!row.block || !row.machineName || !row.recipeName) continue;
 
-    const estimatedBlockWidth = row.block.width;
-    const estimatedBlockHeight = row.block.length;
+    let placedCluster = null;
+    let attempts = 0;
 
-    if (cursorX + estimatedBlockWidth > centerWorld.x + maxRowWidth) {
+    while (!placedCluster && attempts < maxRowAttempts) {
+      const estimatedBlockWidth = row.block.width;
+      const estimatedBlockHeight = row.block.length;
+
+      if (cursorX + estimatedBlockWidth > centerWorld.x + maxRowWidth) {
+        cursorX = snap(centerWorld.x);
+        cursorY = snap(cursorY + currentRowHeight + gap);
+        currentRowHeight = 0;
+      }
+
+      const candidateCluster = buildClusterMachinesFromRow(row, cursorX, cursorY, i);
+
+      if (candidateCluster.length > 0 && canPlaceImportedCluster(candidateCluster, importedMachines)) {
+        placedCluster = candidateCluster;
+        break;
+      }
+
+      // move to next row and try again
       cursorX = snap(centerWorld.x);
-      cursorY = snap(cursorY + currentRowHeight + gap);
+      cursorY = snap(cursorY + Math.max(currentRowHeight, estimatedBlockHeight) + gap);
       currentRowHeight = 0;
+      attempts += 1;
     }
 
-    const clusterMachines = findOpenClusterPlacement(
-      row,
-      cursorX,
-      cursorY,
-      i,
-      importedMachines
-    );
-
-    if (!clusterMachines || clusterMachines.length === 0) {
+    if (!placedCluster) {
       console.warn("Failed to place cluster without overlap:", row.recipeName);
       continue;
     }
 
-    const clusterBounds = getClusterBounds(clusterMachines);
+    const clusterBounds = getClusterBounds(placedCluster);
     if (!clusterBounds) {
       console.warn("Failed to compute cluster bounds:", row.recipeName);
       continue;
     }
 
-    importedMachines.push(...clusterMachines);
+    importedMachines.push(...placedCluster);
 
     cursorX = snap(clusterBounds.right + gap);
     currentRowHeight = Math.max(currentRowHeight, clusterBounds.length);
@@ -1261,7 +1272,6 @@ function importMachineClusters(rows) {
   if (importedMachines.length === 0) {
     throw new Error("No valid machine clusters were imported.");
   }
-
 
   state.machines.push(...importedMachines);
 
