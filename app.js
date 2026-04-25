@@ -246,23 +246,6 @@ function collectInputRefs(inputValue, refs = []) {
   return refs;
 }
 
-function getInputRefsForPart(node, partName, nodeCount) {
-  const inputs = node?.Inputs;
-  if (!inputs) return [];
-
-  let refs = [];
-
-  if (Array.isArray(inputs)) {
-    refs = collectInputRefs(inputs);
-  } else {
-    refs = collectInputRefs(inputs[partName] || []);
-  }
-
-  return [...new Set(refs)]
-    .filter(index => Number.isInteger(index))
-    .filter(index => index >= 0 && index < nodeCount);
-}
-
 function addDemandToNode(nodes, nodeIndex, partName, ppm) {
   const nodeState = nodes[nodeIndex];
 
@@ -293,59 +276,126 @@ function addDemandToNode(nodes, nodeIndex, partName, ppm) {
   for (const [inputPart, inputRatePerMachine] of Object.entries(nodeState.inputsPerMinute)) {
     const totalAdditionalInput = inputRatePerMachine * deltaMachines;
 
-    const upstreamList = getInputRefsForPart(
-      nodeState.node,
-      inputPart,
-      nodes.length
-    );
+    const upstreamRefs = getInputRefsForPart(nodeState.node.Inputs, inputPart);
 
-    if (upstreamList.length === 0) {
+    if (upstreamRefs.length === 0) {
       continue;
     }
 
-    const splitDemand = totalAdditionalInput / upstreamList.length;
+    const splitDemand = totalAdditionalInput / upstreamRefs.length;
 
-    for (const upstreamIndex of upstreamList) {
-      addDemandToNode(nodes, upstreamIndex, inputPart, splitDemand);
+    for (const ref of upstreamRefs) {
+      addDemandToNode(nodes, ref.index, inputPart, splitDemand);
     }
   }
+}
+
+function getInputRefsForPart(inputs, partName = null) {
+  if (!inputs) return [];
+
+  const rawRefs = [];
+
+  if (Array.isArray(inputs)) {
+    rawRefs.push(...inputs);
+  } else if (partName && Array.isArray(inputs[partName])) {
+    rawRefs.push(...inputs[partName]);
+  } else if (!partName && typeof inputs === "object") {
+    for (const value of Object.values(inputs)) {
+      if (Array.isArray(value)) {
+        rawRefs.push(...value);
+      }
+    }
+  }
+
+  return rawRefs
+    .map(ref => {
+      if (typeof ref === "number") {
+        return {
+          index: ref,
+          part: partName
+        };
+      }
+
+      if (Array.isArray(ref)) {
+        // Satisfactory Modeler sometimes uses [nodeIndex, outputSlot]
+        // and sometimes [[nodeIndex, partName]]
+        if (typeof ref[0] === "number") {
+          return {
+            index: ref[0],
+            part: partName
+          };
+        }
+
+        if (Array.isArray(ref[0]) && typeof ref[0][0] === "number") {
+          return {
+            index: ref[0][0],
+            part: typeof ref[0][1] === "string" ? ref[0][1] : partName
+          };
+        }
+      }
+
+      return null;
+    })
+    .filter(ref => ref && Number.isInteger(ref.index));
 }
 
 function solveFactory(sfmd, gameData) {
   const { recipeMap } = getRecipeMaps(gameData);
   const nodes = buildNodeState(sfmd, recipeMap);
 
-  for (const nodeState of nodes) {
-    const maxMachines = parseFraction(nodeState.node?.Max);
+  function seedDemandFromInputRefs(inputRefs, fallbackPpm) {
+    for (const ref of inputRefs) {
+      const upstreamState = nodes[ref.index];
+      if (!upstreamState || !upstreamState.recipe) continue;
 
-    if (maxMachines <= 0 || !nodeState.recipe) {
+      let demandedPart = ref.part;
+
+      if (!demandedPart) {
+        const outputParts = Object.keys(upstreamState.outputsPerMinute || {});
+        demandedPart = outputParts[0] || null;
+      }
+
+      if (!demandedPart) continue;
+
+      addDemandToNode(nodes, ref.index, demandedPart, fallbackPpm);
+    }
+  }
+
+  for (const state of nodes) {
+    const maxMachines = parseFraction(state.node.Max);
+
+    if (maxMachines > 0 && state.recipe) {
+      state.machineCountExact = maxMachines;
+
+      for (const [inputPart, inputRatePerMachine] of Object.entries(state.inputsPerMinute)) {
+        const totalInputPpm = inputRatePerMachine * maxMachines;
+        const upstreamRefs = getInputRefsForPart(state.node.Inputs, inputPart);
+
+        if (upstreamRefs.length === 0) continue;
+
+        const splitDemand = totalInputPpm / upstreamRefs.length;
+
+        for (const ref of upstreamRefs) {
+          addDemandToNode(nodes, ref.index, inputPart, splitDemand);
+        }
+      }
+
       continue;
     }
 
-    nodeState.machineCountExact = maxMachines;
+    // Non-recipe sink/output nodes, like Dimensional Depot or Splurger.
+    // These do not have recipes, but they point back to real production recipes.
+    if (!state.recipe && state.node.Inputs) {
+      const fallbackPpm = maxMachines > 0 ? maxMachines : 1;
+      const upstreamRefs = getInputRefsForPart(state.node.Inputs);
 
-    for (const [inputPart, inputRatePerMachine] of Object.entries(nodeState.inputsPerMinute)) {
-      const totalInputPpm = inputRatePerMachine * maxMachines;
-      const upstreamList = getInputRefsForPart(
-        nodeState.node,
-        inputPart,
-        nodes.length
-      );
-
-      if (upstreamList.length === 0) {
-        continue;
-      }
-
-      const splitDemand = totalInputPpm / upstreamList.length;
-
-      for (const upstreamIndex of upstreamList) {
-        addDemandToNode(nodes, upstreamIndex, inputPart, splitDemand);
-      }
+      seedDemandFromInputRefs(upstreamRefs, fallbackPpm);
     }
   }
 
   return nodes;
 }
+
 function computeNodeDepths(nodes) {
   const memo = new Map();
   const visiting = new Set();
