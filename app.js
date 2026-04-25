@@ -246,6 +246,80 @@ function collectInputRefs(inputValue, refs = []) {
   return refs;
 }
 
+function getNodeSinkDemandPpm(node) {
+  const max = parseFraction(node?.Max);
+  const capacity = String(node?.Capacity || "").trim();
+
+  const capacityMatch = capacity.match(/([\d.]+)\s*\/\s*min/i);
+  const capacityPpm = capacityMatch ? Number(capacityMatch[1]) : 0;
+
+  if (capacityPpm > 0 && max > 0) {
+    return capacityPpm * max;
+  }
+
+  if (capacityPpm > 0) {
+    return capacityPpm;
+  }
+
+  if (max > 0) {
+    return max;
+  }
+
+  return 1;
+}
+
+function routeDemandToNode(nodes, nodeIndex, partName, ppm, visiting = new Set()) {
+  const nodeState = nodes[nodeIndex];
+
+  if (!nodeState) {
+    return;
+  }
+
+  const visitKey = `${nodeIndex}|${partName || ""}`;
+  if (visiting.has(visitKey)) {
+    return;
+  }
+
+  visiting.add(visitKey);
+
+  if (nodeState.recipe) {
+    let demandedPart = partName;
+
+    if (!demandedPart) {
+      const outputParts = Object.keys(nodeState.outputsPerMinute || {});
+      demandedPart = outputParts[0] || null;
+    }
+
+    if (demandedPart) {
+      addDemandToNode(nodes, nodeIndex, demandedPart, ppm);
+    }
+
+    visiting.delete(visitKey);
+    return;
+  }
+
+  const upstreamRefs = getInputRefsForPart(nodeState.node.Inputs);
+
+  if (upstreamRefs.length === 0) {
+    visiting.delete(visitKey);
+    return;
+  }
+
+  const splitDemand = ppm / upstreamRefs.length;
+
+  for (const ref of upstreamRefs) {
+    routeDemandToNode(
+      nodes,
+      ref.index,
+      ref.part || partName,
+      splitDemand,
+      visiting
+    );
+  }
+
+  visiting.delete(visitKey);
+}
+
 function addDemandToNode(nodes, nodeIndex, partName, ppm) {
   const nodeState = nodes[nodeIndex];
 
@@ -275,7 +349,6 @@ function addDemandToNode(nodes, nodeIndex, partName, ppm) {
 
   for (const [inputPart, inputRatePerMachine] of Object.entries(nodeState.inputsPerMinute)) {
     const totalAdditionalInput = inputRatePerMachine * deltaMachines;
-
     const upstreamRefs = getInputRefsForPart(nodeState.node.Inputs, inputPart);
 
     if (upstreamRefs.length === 0) {
@@ -285,7 +358,12 @@ function addDemandToNode(nodes, nodeIndex, partName, ppm) {
     const splitDemand = totalAdditionalInput / upstreamRefs.length;
 
     for (const ref of upstreamRefs) {
-      addDemandToNode(nodes, ref.index, inputPart, splitDemand);
+      routeDemandToNode(
+        nodes,
+        ref.index,
+        ref.part || inputPart,
+        splitDemand
+      );
     }
   }
 }
@@ -343,24 +421,6 @@ function solveFactory(sfmd, gameData) {
   const { recipeMap } = getRecipeMaps(gameData);
   const nodes = buildNodeState(sfmd, recipeMap);
 
-  function seedDemandFromInputRefs(inputRefs, fallbackPpm) {
-    for (const ref of inputRefs) {
-      const upstreamState = nodes[ref.index];
-      if (!upstreamState || !upstreamState.recipe) continue;
-
-      let demandedPart = ref.part;
-
-      if (!demandedPart) {
-        const outputParts = Object.keys(upstreamState.outputsPerMinute || {});
-        demandedPart = outputParts[0] || null;
-      }
-
-      if (!demandedPart) continue;
-
-      addDemandToNode(nodes, ref.index, demandedPart, fallbackPpm);
-    }
-  }
-
   for (const state of nodes) {
     const maxMachines = parseFraction(state.node.Max);
 
@@ -371,25 +431,45 @@ function solveFactory(sfmd, gameData) {
         const totalInputPpm = inputRatePerMachine * maxMachines;
         const upstreamRefs = getInputRefsForPart(state.node.Inputs, inputPart);
 
-        if (upstreamRefs.length === 0) continue;
+        if (upstreamRefs.length === 0) {
+          continue;
+        }
 
         const splitDemand = totalInputPpm / upstreamRefs.length;
 
         for (const ref of upstreamRefs) {
-          addDemandToNode(nodes, ref.index, inputPart, splitDemand);
+          routeDemandToNode(
+            nodes,
+            ref.index,
+            ref.part || inputPart,
+            splitDemand
+          );
         }
       }
 
       continue;
     }
 
-    // Non-recipe sink/output nodes, like Dimensional Depot or Splurger.
-    // These do not have recipes, but they point back to real production recipes.
-    if (!state.recipe && state.node.Inputs) {
-      const fallbackPpm = maxMachines > 0 ? maxMachines : 1;
+    // Non-recipe endpoint nodes, like Dimensional Depot.
+    // Example: Capacity "60/min" and Max ".5" should demand 30 ppm.
+    if (!state.recipe && maxMachines > 0 && state.node.Inputs) {
+      const demandPpm = getNodeSinkDemandPpm(state.node);
       const upstreamRefs = getInputRefsForPart(state.node.Inputs);
 
-      seedDemandFromInputRefs(upstreamRefs, fallbackPpm);
+      if (upstreamRefs.length === 0) {
+        continue;
+      }
+
+      const splitDemand = demandPpm / upstreamRefs.length;
+
+      for (const ref of upstreamRefs) {
+        routeDemandToNode(
+          nodes,
+          ref.index,
+          ref.part || null,
+          splitDemand
+        );
+      }
     }
   }
 
