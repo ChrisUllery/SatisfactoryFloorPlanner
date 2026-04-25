@@ -33,31 +33,6 @@
       </section>
 
       <section class="panel">
-        <h2>Recipe Palette</h2>
-        <div class="machine-picker">
-          <input
-            id="recipeSearch"
-            type="text"
-            placeholder="Search recipes..."
-            autocomplete="off"
-          />
-
-          <select id="machineSelect"></select>
-
-          <label class="field-label" for="machineCountInput">Machine count</label>
-          <input
-            id="machineCountInput"
-            type="number"
-            min="1"
-            step="1"
-            value="1"
-          />
-
-          <button id="addMachineBtn" type="button">Add Machine Block</button>
-        </div>
-      </section>
-
-      <section class="panel">
         <h2>Import / Export</h2>
         <div class="machine-picker">
           <input id="importFactoryFile" type="file" accept=".sfmd,.json" />
@@ -79,12 +54,38 @@
           <p class="import-hint">
             Tip: Set a machine limit or output target for at least one recipe in Satisfactory Modeler for best import results.
           </p>
+
           <button id="exportLayoutPngBtn" type="button">Export Layout PNG</button>
         </div>
 
         <p class="subhead" style="margin-top: 12px; margin-bottom: 0;">
           Import either a parser JSON file or a Satisfactory Modeler .sfmd save file.
         </p>
+      </section>
+
+      <section class="panel">
+        <h2>Add Recipes Manually</h2>
+        <div class="machine-picker">
+          <input
+            id="recipeSearch"
+            type="text"
+            placeholder="Search recipes..."
+            autocomplete="off"
+          />
+
+          <select id="machineSelect"></select>
+
+          <label class="field-label" for="machineCountInput">Machine count</label>
+          <input
+            id="machineCountInput"
+            type="number"
+            min="1"
+            step="1"
+            value="1"
+          />
+
+          <button id="addMachineBtn" type="button">Add Machine Block</button>
+        </div>
       </section>
 
       <section class="panel">
@@ -146,6 +147,7 @@
 
   <script>
     const exportLayoutPngBtn = document.getElementById("exportLayoutPngBtn");
+
     if (exportLayoutPngBtn) {
       exportLayoutPngBtn.addEventListener("click", () => {
         if (typeof gtag === "function") {
