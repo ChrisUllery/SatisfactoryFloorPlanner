@@ -1456,11 +1456,37 @@ function exportSummaryPdf() {
   }, 100);
 }
 
+function getColorForRecipe(recipeName) {
+  const palette = [
+    "#4ea1ff", // blue
+    "#7bd88f", // green
+    "#ffd166", // yellow
+    "#ef476f", // pink/red
+    "#9b5de5", // purple
+    "#00bbf9", // cyan
+    "#f15bb5", // magenta
+    "#f77f00", // orange
+    "#90be6d", // olive green
+    "#43aa8b", // teal
+    "#577590", // slate blue
+    "#f9844a"  // coral
+  ];
+
+  let hash = 0;
+
+  for (let i = 0; i < recipeName.length; i++) {
+    hash = recipeName.charCodeAt(i) + ((hash << 5) - hash);
+  }
+
+  return palette[Math.abs(hash) % palette.length];
+}
+
 function createImportedMachine(type, x, y, metadata = {}) {
   const machine = createMachine(type, x, y);
 
   return {
     ...machine,
+    color: metadata.color || machine.color,
     recipeName: metadata.recipeName || null,
     blockId: metadata.blockId || null,
     blockIndex: metadata.blockIndex ?? null,
@@ -1489,6 +1515,7 @@ function buildClusterMachinesFromRow(row, anchorX, anchorY, blockIndex) {
   const count = row.roundedMachines || rows * cols;
 
   const blockId = crypto.randomUUID();
+  const blockColor = getColorForRecipe(row.recipeName);
   const machines = [];
 
   const rowGap = 2;
@@ -1512,7 +1539,8 @@ function buildClusterMachinesFromRow(row, anchorX, anchorY, blockIndex) {
           blockCount: count,
           blockMachineType: row.machineName,
           exactMachines: row.exactMachines ?? null,
-          blockPosition: { row: r, col: c, index }
+          blockPosition: { row: r, col: c, index },
+          color: blockColor,
         })
       );
     }
