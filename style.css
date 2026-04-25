@@ -366,3 +366,87 @@ li {
     display: none !important;
   }
 }
+/* Keep sidebar controls from overflowing their panel at browser zoom levels */
+.machine-picker,
+.machine-picker > *,
+.panel,
+#sidebar input,
+#sidebar select,
+#sidebar button {
+  max-width: 100%;
+  min-width: 0;
+}
+
+#sidebar input[type="file"] {
+  width: 100%;
+  font-size: 0.82rem;
+}
+
+/* Floating controls help card */
+.floating-help {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 30;
+  width: 300px;
+  max-width: calc(100% - 24px);
+  background: rgba(15, 20, 26, 0.96);
+  border: 1px solid #2d333b;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+
+.floating-help button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 0;
+  background: #1b2430;
+  color: #e6edf3;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.floating-help button:hover {
+  background: #243041;
+}
+
+.floating-help-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: 1px solid #3d4c60;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  color: #9da7b3;
+}
+
+.floating-help-body {
+  padding: 10px 14px 12px;
+}
+
+.floating-help-body ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.floating-help-body li {
+  margin-bottom: 8px;
+  color: #c3ccd5;
+  font-size: 0.88rem;
+  line-height: 1.25;
+}
+
+.floating-help.collapsed {
+  width: 132px;
+}
+
+.floating-help.collapsed .floating-help-body {
+  display: none;
+}
