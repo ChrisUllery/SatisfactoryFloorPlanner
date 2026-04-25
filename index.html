@@ -79,8 +79,6 @@
           <p class="import-hint">
             Tip: Set a machine limit or output target for at least one recipe in Satisfactory Modeler for best import results.
           </p>
-
-          <button id="exportPlannerBtn" type="button">Export Planner JSON</button>
           <button id="exportLayoutPngBtn" type="button">Export Layout PNG</button>
         </div>
 
@@ -147,40 +145,7 @@
   <script src="app.js"></script>
 
   <script>
-    const exportPlannerBtn = document.getElementById("exportPlannerBtn");
     const exportLayoutPngBtn = document.getElementById("exportLayoutPngBtn");
-
-    if (exportPlannerBtn) {
-      exportPlannerBtn.addEventListener("click", () => {
-        if (typeof gtag === "function") {
-          console.log("GA event fired: export_planner_json");
-          gtag("event", "export_planner_json");
-        } else {
-          console.error("GA NOT LOADED");
-        }
-
-        if (!window.getPlannerState) {
-          console.error("getPlannerState not found");
-          return;
-        }
-
-        const data = window.getPlannerState();
-
-        const blob = new Blob([JSON.stringify(data, null, 2)], {
-          type: "application/json"
-        });
-
-        const url = URL.createObjectURL(blob);
-
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = "planner_layout.json";
-        a.click();
-
-        URL.revokeObjectURL(url);
-      });
-    }
-
     if (exportLayoutPngBtn) {
       exportLayoutPngBtn.addEventListener("click", () => {
         if (typeof gtag === "function") {
