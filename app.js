@@ -427,8 +427,8 @@ function computeNodeDepths(nodes) {
 
 function buildRecipeSummaryFromSfmd(sfmd, gameData, gap = 1) {
   const solvedNodes = solveFactory(sfmd, gameData);
-  const grouped = new Map();
   const depths = computeNodeDepths(solvedNodes);
+  const grouped = new Map();
 
   const EXCLUDED_MACHINES = [
     "Miner",
@@ -1624,13 +1624,20 @@ function importMachineClusters(rows) {
 }
 
 importFactoryBtn.addEventListener("click", async () => {
+  let file = null;
+
   try {
-    const file = importFactoryFile.files?.[0];
-    if (!file) return;
+    file = importFactoryFile.files?.[0];
+
+    if (!file) {
+      alert("Choose a .sfmd or .json file first.");
+      return;
+    }
 
     let rows;
+    const fileType = file.name.toLowerCase().endsWith(".sfmd") ? "sfmd" : "json";
 
-    if (file.name.toLowerCase().endsWith(".sfmd")) {
+    if (fileType === "sfmd") {
       const sfmd = await readJsonFile(file);
 
       if (!sfmd || !Array.isArray(sfmd.Data)) {
@@ -1644,25 +1651,25 @@ importFactoryBtn.addEventListener("click", async () => {
       rows = normalizeImportedRows(payload);
     }
 
-    if (typeof gtag === "function") {
-      gtag("event", "import_success", {
-        file_type: file.name.toLowerCase().endsWith(".sfmd") ? "sfmd" : "json"
-      });
-    }
+    logPlannerEvent("import_success", {
+      file_type: fileType,
+      file_name: file.name,
+      rows: rows.length
+    });
 
     state.lastImportedRows = rows;
     renderSummaryView(rows);
     importMachineClusters(rows);
   } catch (error) {
-    if (typeof gtag === "function") {
-      gtag("event", "import_failure");
-    }
-
     logPlannerError(error, {
-    source: "importFactoryBtn",
-    fileName: file?.name || null,
-    fileType: file?.name?.toLowerCase().endsWith(".sfmd") ? "sfmd" : "json"
+      action: "import_file",
+      file_name: file ? file.name : null,
+      file_type: file
+        ? file.name.toLowerCase().endsWith(".sfmd") ? "sfmd" : "json"
+        : null
     });
+
+    console.error(error);
     alert(error.message);
   }
 });
