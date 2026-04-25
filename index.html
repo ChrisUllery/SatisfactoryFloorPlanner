@@ -89,23 +89,29 @@
       </section>
 
       <section class="panel">
-        <h2>Controls</h2>
-        <ul>
-          <li>Mouse wheel: Zoom</li>
-          <li>Middle mouse drag: Pan</li>
-          <li>Left drag: Move machine or selected machines</li>
-          <li>R: Rotate selected machine or selected machines</li>
-          <li>Delete / Backspace: Remove selected machine</li>
-        </ul>
-      </section>
-
-      <section class="panel">
         <h2>Selected</h2>
         <div id="selectedInfo">None</div>
       </section>
     </aside>
 
     <main id="workspace">
+      <aside id="controlsHelp" class="floating-help collapsed">
+        <button id="controlsHelpToggle" type="button" aria-expanded="false">
+          Controls
+          <span class="floating-help-icon">?</span>
+        </button>
+
+        <div class="floating-help-body">
+          <ul>
+            <li><strong>Mouse wheel:</strong> Zoom</li>
+            <li><strong>Middle mouse drag:</strong> Pan</li>
+            <li><strong>Left drag:</strong> Move machine or selected machines</li>
+            <li><strong>R:</strong> Rotate selected machine or selected machines</li>
+            <li><strong>Delete / Backspace:</strong> Remove selected machine</li>
+          </ul>
+        </div>
+      </aside>
+
       <canvas id="plannerCanvas"></canvas>
 
       <div id="summaryView">
@@ -147,6 +153,8 @@
 
   <script>
     const exportLayoutPngBtn = document.getElementById("exportLayoutPngBtn");
+    const controlsHelp = document.getElementById("controlsHelp");
+    const controlsHelpToggle = document.getElementById("controlsHelpToggle");
 
     if (exportLayoutPngBtn) {
       exportLayoutPngBtn.addEventListener("click", () => {
@@ -162,6 +170,13 @@
         } else {
           console.error("exportLayoutPng function not found in app.js");
         }
+      });
+    }
+
+    if (controlsHelp && controlsHelpToggle) {
+      controlsHelpToggle.addEventListener("click", () => {
+        const isCollapsed = controlsHelp.classList.toggle("collapsed");
+        controlsHelpToggle.setAttribute("aria-expanded", String(!isCollapsed));
       });
     }
   </script>
