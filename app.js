@@ -659,7 +659,12 @@ const state = {
   marqueeRect: null,
   isDragging: false,
   viewMode: "planner",
-  lastImportedRows: null
+  lastImportedRows: null,
+  autoFoundations: {
+    enabled: true,
+    tileSize: FOUNDATION_SIZE,
+    opacity: 0.72
+  }
 };
 
 function resizeCanvas() {
@@ -850,6 +855,131 @@ function getMachineOccupiedRects(
     buffers.input,
     buffers.output
   ].filter(Boolean);
+}
+
+function getFoundationCellsForRect(rect, tileSize = FOUNDATION_SIZE) {
+  if (!rect) return [];
+
+  const cells = [];
+
+  // Option A:
+  // Any overlap OR edge-touch counts as occupying that foundation cell.
+  const startCol = Math.floor(rect.left / tileSize);
+  const endCol = Math.floor(rect.right / tileSize);
+  const startRow = Math.floor(rect.top / tileSize);
+  const endRow = Math.floor(rect.bottom / tileSize);
+
+  for (let row = startRow; row <= endRow; row++) {
+    for (let col = startCol; col <= endCol; col++) {
+      cells.push({ col, row });
+    }
+  }
+
+  return cells;
+}
+
+function collectAutoFoundationCells() {
+  const tileSize = state.autoFoundations.tileSize || FOUNDATION_SIZE;
+  const occupied = new Map();
+
+  for (const machine of state.machines) {
+    const rects = getMachineOccupiedRects(machine);
+
+    for (const rect of rects) {
+      const cells = getFoundationCellsForRect(rect, tileSize);
+
+      for (const cell of cells) {
+        const key = `${cell.col},${cell.row}`;
+
+        if (!occupied.has(key)) {
+          occupied.set(key, cell);
+        }
+      }
+    }
+  }
+
+  return Array.from(occupied.values());
+}
+
+function drawFoundationTile(worldX, worldY, tileSize) {
+  const screenPos = worldToScreen(worldX, worldY);
+  const sizePx = tileSize * state.camera.zoom;
+
+  // Skip tiny offscreen-ish work where possible.
+  const rect = canvas.getBoundingClientRect();
+  if (
+    screenPos.x + sizePx < -64 ||
+    screenPos.y + sizePx < -64 ||
+    screenPos.x > rect.width + 64 ||
+    screenPos.y > rect.height + 64
+  ) {
+    return;
+  }
+
+  // Base foundation panel.
+  ctx.fillStyle = "#6b5a43";
+  ctx.fillRect(screenPos.x, screenPos.y, sizePx, sizePx);
+
+  // Inner panel.
+  const inset = Math.max(1, sizePx * 0.08);
+  ctx.fillStyle = "#7a684e";
+  ctx.fillRect(
+    screenPos.x + inset,
+    screenPos.y + inset,
+    sizePx - inset * 2,
+    sizePx - inset * 2
+  );
+
+  // Slight center variation so it doesn't look like a flat color.
+  ctx.fillStyle = "rgba(255, 255, 255, 0.055)";
+  ctx.fillRect(
+    screenPos.x + sizePx * 0.22,
+    screenPos.y + sizePx * 0.18,
+    sizePx * 0.56,
+    sizePx * 0.64
+  );
+
+  // Border.
+  ctx.strokeStyle = "rgba(230, 210, 170, 0.55)";
+  ctx.lineWidth = Math.max(1, state.camera.zoom * 0.035);
+  ctx.strokeRect(screenPos.x, screenPos.y, sizePx, sizePx);
+
+  // Dark seams.
+  ctx.strokeStyle = "rgba(20, 16, 12, 0.55)";
+  ctx.lineWidth = Math.max(1, state.camera.zoom * 0.025);
+
+  ctx.beginPath();
+  ctx.moveTo(screenPos.x + sizePx, screenPos.y);
+  ctx.lineTo(screenPos.x + sizePx, screenPos.y + sizePx);
+  ctx.moveTo(screenPos.x, screenPos.y + sizePx);
+  ctx.lineTo(screenPos.x + sizePx, screenPos.y + sizePx);
+  ctx.stroke();
+}
+
+function drawAutoFoundations() {
+  if (!state.autoFoundations.enabled) {
+    return;
+  }
+
+  if (!state.machines || state.machines.length === 0) {
+    return;
+  }
+
+  const tileSize = state.autoFoundations.tileSize || FOUNDATION_SIZE;
+  const cells = collectAutoFoundationCells();
+
+  ctx.save();
+  ctx.globalAlpha = state.autoFoundations.opacity ?? 0.72;
+
+  for (const cell of cells) {
+    drawFoundationTile(
+      cell.col * tileSize,
+      cell.row * tileSize,
+      tileSize
+    );
+  }
+
+  ctx.restore();
 }
 
 function rectSetsOverlap(rectsA, rectsB) {
@@ -2189,10 +2319,12 @@ function draw() {
   }
 
   drawGrid();
+  drawAutoFoundations();
   drawOrigin();
   drawMachines();
   drawMarquee();
 }
+
 function drawSummaryView() {
   if (!state.lastImportedRows || state.lastImportedRows.length === 0) {
     ctx.fillStyle = "#e8eef5";
@@ -2838,7 +2970,57 @@ window.getPlannerState = function () {
 };
 window.addEventListener("resize", resizeCanvas);
 
+function setupAutoFoundationToggle() {
+  if (document.getElementById("autoFoundationToggle")) {
+    return;
+  }
+
+  const viewControls = plannerViewBtn?.parentElement;
+  if (!viewControls) {
+    return;
+  }
+
+  const label = document.createElement("label");
+  label.className = "foundation-toggle";
+  label.style.display = "flex";
+  label.style.alignItems = "center";
+  label.style.gap = "8px";
+  label.style.padding = "8px 10px";
+  label.style.border = "1px solid #2d333b";
+  label.style.borderRadius = "8px";
+  label.style.background = "#0f141a";
+  label.style.color = "#c3ccd5";
+  label.style.fontSize = "0.88rem";
+  label.style.cursor = "pointer";
+
+  label.innerHTML = `
+    <input
+      id="autoFoundationToggle"
+      type="checkbox"
+      checked
+      style="margin: 0;"
+    />
+    <span>Auto-draw foundations</span>
+  `;
+
+  viewControls.appendChild(label);
+
+  const toggle = document.getElementById("autoFoundationToggle");
+  toggle.checked = state.autoFoundations.enabled;
+
+  toggle.addEventListener("change", () => {
+    state.autoFoundations.enabled = toggle.checked;
+
+    logPlannerEvent("toggle_auto_foundations", {
+      enabled: state.autoFoundations.enabled
+    });
+
+    draw();
+  });
+}
+
 loadMachineCatalog().then(() => {
+  setupAutoFoundationToggle();
   renderRecipePalette();
   resizeCanvas();
   updateSelectedInfo();
