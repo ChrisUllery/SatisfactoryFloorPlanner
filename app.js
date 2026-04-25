@@ -26,7 +26,14 @@ const MAX_ZOOM = 80;
 let machineCatalog = {};
 
 const GAME_DATA_PATH = "data/game_data.json";
+const FOUNDATION_TEXTURE_PATH = "assets/foundation_tile.png";
 
+const foundationTexture = new Image();
+foundationTexture.src = FOUNDATION_TEXTURE_PATH;
+foundationTexture.onload = () => draw();
+foundationTexture.onerror = () => {
+  console.warn(`Could not load foundation texture: ${FOUNDATION_TEXTURE_PATH}`);
+};
 let gameData = null;
 
 const MACHINE_FOOTPRINTS = {
@@ -905,7 +912,6 @@ function drawFoundationTile(worldX, worldY, tileSize) {
   const screenPos = worldToScreen(worldX, worldY);
   const sizePx = tileSize * state.camera.zoom;
 
-  // Skip tiny offscreen-ish work where possible.
   const rect = canvas.getBoundingClientRect();
   if (
     screenPos.x + sizePx < -64 ||
@@ -916,11 +922,22 @@ function drawFoundationTile(worldX, worldY, tileSize) {
     return;
   }
 
-  // Base foundation panel.
+  if (foundationTexture.complete && foundationTexture.naturalWidth > 0) {
+    ctx.drawImage(
+      foundationTexture,
+      screenPos.x,
+      screenPos.y,
+      sizePx,
+      sizePx
+    );
+
+    return;
+  }
+
+  // Fallback placeholder if the image has not loaded or fails.
   ctx.fillStyle = "#6b5a43";
   ctx.fillRect(screenPos.x, screenPos.y, sizePx, sizePx);
 
-  // Inner panel.
   const inset = Math.max(1, sizePx * 0.08);
   ctx.fillStyle = "#7a684e";
   ctx.fillRect(
@@ -930,7 +947,6 @@ function drawFoundationTile(worldX, worldY, tileSize) {
     sizePx - inset * 2
   );
 
-  // Slight center variation so it doesn't look like a flat color.
   ctx.fillStyle = "rgba(255, 255, 255, 0.055)";
   ctx.fillRect(
     screenPos.x + sizePx * 0.22,
@@ -939,12 +955,10 @@ function drawFoundationTile(worldX, worldY, tileSize) {
     sizePx * 0.64
   );
 
-  // Border.
   ctx.strokeStyle = "rgba(230, 210, 170, 0.55)";
   ctx.lineWidth = Math.max(1, state.camera.zoom * 0.035);
   ctx.strokeRect(screenPos.x, screenPos.y, sizePx, sizePx);
 
-  // Dark seams.
   ctx.strokeStyle = "rgba(20, 16, 12, 0.55)";
   ctx.lineWidth = Math.max(1, state.camera.zoom * 0.025);
 
