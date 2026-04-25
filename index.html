@@ -61,10 +61,29 @@
         <h2>Import / Export</h2>
         <div class="machine-picker">
           <input id="importFactoryFile" type="file" accept=".sfmd,.json" />
-          <button id="importFactoryBtn" type="button">Import File</button>
+
+          <div class="tooltip-wrap">
+            <button
+              id="importFactoryBtn"
+              type="button"
+              title="For best results, manually set a machine limit or output target for at least one recipe in Satisfactory Modeler before exporting."
+            >
+              Import File
+            </button>
+
+            <div class="tooltip-text">
+              For best results, manually set a machine limit or output target for at least one recipe in Satisfactory Modeler before exporting.
+            </div>
+          </div>
+
+          <p class="import-hint">
+            Tip: Set a machine limit or output target for at least one recipe in Satisfactory Modeler for best import results.
+          </p>
+
           <button id="exportPlannerBtn" type="button">Export Planner JSON</button>
           <button id="exportLayoutPngBtn" type="button">Export Layout PNG</button>
         </div>
+
         <p class="subhead" style="margin-top: 12px; margin-bottom: 0;">
           Import either a parser JSON file or a Satisfactory Modeler .sfmd save file.
         </p>
