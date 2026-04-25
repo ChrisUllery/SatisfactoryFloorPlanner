@@ -4,6 +4,7 @@ const ctx = canvas.getContext("2d");
 const machineSelect = document.getElementById("machineSelect");
 const recipeSearch = document.getElementById("recipeSearch");
 const addMachineBtn = document.getElementById("addMachineBtn");
+const machineCountInput = document.getElementById("machineCountInput");
 const plannerViewBtn = document.getElementById("plannerViewBtn");
 const summaryViewBtn = document.getElementById("summaryViewBtn");
 const selectedInfo = document.getElementById("selectedInfo");
@@ -978,7 +979,8 @@ addMachineBtn.addEventListener("click", async () => {
     return;
   }
 
-  placeMachineFromRecipe(recipe);
+  const machineCount = getRequestedMachineCount();
+  placeMachineClusterFromRecipe(recipe, machineCount);
 });
 
 plannerViewBtn.addEventListener("click", () => {
@@ -1017,6 +1019,16 @@ function normalizeImportedRows(payload) {
   throw new Error("Imported JSON does not contain a rows array.");
 }
 
+function getRequestedMachineCount() {
+  const rawValue = Number(machineCountInput?.value || 1);
+
+  if (!Number.isFinite(rawValue) || rawValue < 1) {
+    return 1;
+  }
+
+  return Math.floor(rawValue);
+}
+
 function placeMachineFromRecipe(recipe) {
   const machineType = recipe.Machine;
 
@@ -1050,6 +1062,54 @@ function placeMachineFromRecipe(recipe) {
 
   state.machines.push(machine);
   setSelection([machine.id]);
+
+  updateSelectedInfo();
+  draw();
+}
+
+function placeMachineClusterFromRecipe(recipe, count) {
+  const machineType = recipe.Machine;
+
+  const def = getMachineDefinition(machineType);
+  if (!def) {
+    alert(`No machine definition for ${machineType}`);
+    return;
+  }
+
+  const safeCount = Math.max(1, Math.floor(Number(count) || 1));
+  const blockLayout = getBlockEstimate(machineType, safeCount, 2);
+
+  const row = {
+    recipeName: recipe.Name,
+    machineName: machineType,
+    roundedMachines: safeCount,
+    exactMachines: safeCount,
+    footprint: {
+      width: def.width,
+      length: def.length
+    },
+    block: blockLayout
+  };
+
+  const rect = canvas.getBoundingClientRect();
+  const centerWorld = screenToWorld(rect.width / 2, rect.height / 2);
+
+  const clusterMachines = findOpenClusterPlacement(
+    row,
+    centerWorld.x,
+    centerWorld.y,
+    state.machines.length,
+    [],
+    240
+  );
+
+  if (!clusterMachines || clusterMachines.length === 0) {
+    alert(`Could not find room to place ${safeCount} ${machineType} machine(s).`);
+    return;
+  }
+
+  state.machines.push(...clusterMachines);
+  setSelection(clusterMachines.map(machine => machine.id));
 
   updateSelectedInfo();
   draw();

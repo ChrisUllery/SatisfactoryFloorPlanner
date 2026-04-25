@@ -89,7 +89,28 @@ body {
   font-size: 0.82rem;
   color: #9da7b3;
 }
+.field-label {
+  color: #9da7b3;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
 
+.machine-picker input[type="number"] {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #2d333b;
+  border-radius: 8px;
+  background: #1b2430;
+  color: #e6edf3;
+  font-size: 0.95rem;
+}
+
+.machine-picker input[type="number"]:hover,
+.machine-picker input[type="number"]:focus {
+  background: #243041;
+  border-color: #3d4c60;
+  outline: none;
+}
 ul {
   padding-left: 18px;
   margin-bottom: 0;

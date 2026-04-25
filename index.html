@@ -41,8 +41,19 @@
             placeholder="Search recipes..."
             autocomplete="off"
           />
+
           <select id="machineSelect"></select>
-          <button id="addMachineBtn" type="button">Add Machine</button>
+
+          <label class="field-label" for="machineCountInput">Machine count</label>
+          <input
+            id="machineCountInput"
+            type="number"
+            min="1"
+            step="1"
+            value="1"
+          />
+
+          <button id="addMachineBtn" type="button">Add Machine Block</button>
         </div>
       </section>
 
@@ -122,7 +133,6 @@
 
     if (exportPlannerBtn) {
       exportPlannerBtn.addEventListener("click", () => {
-
         if (typeof gtag === "function") {
           console.log("GA event fired: export_planner_json");
           gtag("event", "export_planner_json");
@@ -154,7 +164,6 @@
 
     if (exportLayoutPngBtn) {
       exportLayoutPngBtn.addEventListener("click", () => {
-
         if (typeof gtag === "function") {
           console.log("GA event fired: export_layout_png");
           gtag("event", "export_layout_png");
