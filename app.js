@@ -1457,28 +1457,30 @@ function exportSummaryPdf() {
 }
 
 function getColorForRecipe(recipeName) {
-  const palette = [
-    "#4ea1ff", // blue
-    "#7bd88f", // green
-    "#ffd166", // yellow
-    "#ef476f", // pink/red
-    "#9b5de5", // purple
-    "#00bbf9", // cyan
-    "#f15bb5", // magenta
-    "#f77f00", // orange
-    "#90be6d", // olive green
-    "#43aa8b", // teal
-    "#577590", // slate blue
-    "#f9844a"  // coral
-  ];
+  const name = String(recipeName || "Unknown Recipe");
 
   let hash = 0;
-
-  for (let i = 0; i < recipeName.length; i++) {
-    hash = recipeName.charCodeAt(i) + ((hash << 5) - hash);
+  for (let i = 0; i < name.length; i++) {
+    hash = name.charCodeAt(i) + ((hash << 5) - hash);
+    hash |= 0;
   }
 
-  return palette[Math.abs(hash) % palette.length];
+  const positiveHash = Math.abs(hash);
+
+  const hue = positiveHash % 360;
+  const saturation = 62 + (positiveHash % 18); // 62–79%
+  const lightness = 50 + (Math.floor(positiveHash / 360) % 14); // 50–63%
+
+  const backgroundColor = `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+
+  // Estimate readable text color from HSL lightness.
+  // Most generated colors are mid-bright, but this protects darker blues/purples.
+  const textColor = lightness >= 56 ? "#0b0f14" : "#ffffff";
+
+  return {
+    backgroundColor,
+    textColor
+  };
 }
 
 function createImportedMachine(type, x, y, metadata = {}) {
@@ -1487,6 +1489,7 @@ function createImportedMachine(type, x, y, metadata = {}) {
   return {
     ...machine,
     color: metadata.color || machine.color,
+    textColor: metadata.textColor || machine.textColor || "#0b0f14",
     recipeName: metadata.recipeName || null,
     blockId: metadata.blockId || null,
     blockIndex: metadata.blockIndex ?? null,
@@ -1515,7 +1518,7 @@ function buildClusterMachinesFromRow(row, anchorX, anchorY, blockIndex) {
   const count = row.roundedMachines || rows * cols;
 
   const blockId = crypto.randomUUID();
-  const blockColor = getColorForRecipe(row.recipeName);
+  const recipeColors = getColorForRecipe(row.recipeName);
   const machines = [];
 
   const rowGap = 2;
@@ -1540,7 +1543,8 @@ function buildClusterMachinesFromRow(row, anchorX, anchorY, blockIndex) {
           blockMachineType: row.machineName,
           exactMachines: row.exactMachines ?? null,
           blockPosition: { row: r, col: c, index },
-          color: blockColor,
+          color: recipeColors.backgroundColor,
+          textColor: recipeColors.textColor
         })
       );
     }
@@ -2038,9 +2042,9 @@ function drawMachines() {
     ctx.save();
 
     if (buffers.input) {
-      let topLeft = worldToScreen(buffers.input.left, buffers.input.top);
-      let bufferWidthPx = (buffers.input.right - buffers.input.left) * state.camera.zoom;
-      let bufferHeightPx = (buffers.input.bottom - buffers.input.top) * state.camera.zoom;
+      const topLeft = worldToScreen(buffers.input.left, buffers.input.top);
+      const bufferWidthPx = (buffers.input.right - buffers.input.left) * state.camera.zoom;
+      const bufferHeightPx = (buffers.input.bottom - buffers.input.top) * state.camera.zoom;
 
       ctx.fillStyle = "rgba(80, 200, 120, 0.22)";
       ctx.strokeStyle = "rgba(80, 200, 120, 0.55)";
@@ -2050,9 +2054,9 @@ function drawMachines() {
     }
 
     if (buffers.output) {
-      let topLeft = worldToScreen(buffers.output.left, buffers.output.top);
-      let bufferWidthPx = (buffers.output.right - buffers.output.left) * state.camera.zoom;
-      let bufferHeightPx = (buffers.output.bottom - buffers.output.top) * state.camera.zoom;
+      const topLeft = worldToScreen(buffers.output.left, buffers.output.top);
+      const bufferWidthPx = (buffers.output.right - buffers.output.left) * state.camera.zoom;
+      const bufferHeightPx = (buffers.output.bottom - buffers.output.top) * state.camera.zoom;
 
       ctx.fillStyle = "rgba(255, 215, 0, 0.18)";
       ctx.strokeStyle = "rgba(255, 215, 0, 0.45)";
@@ -2074,14 +2078,14 @@ function drawMachines() {
     let fontSize = Math.floor(Math.min(widthPx, heightPx) * 0.18);
     fontSize = Math.max(8, Math.min(24, fontSize));
 
-    ctx.fillStyle = "#0b0f14";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
 
     while (fontSize > 8) {
       ctx.font = `${fontSize}px Arial`;
 
-      const words = machine.type.split(" ");
+      const labelSource = machine.recipeName || machine.type;
+      const words = labelSource.split(" ");
       const lineHeight = fontSize * 1.15;
 
       let lines = [];
@@ -2105,13 +2109,13 @@ function drawMachines() {
       const totalHeight = lines.length * lineHeight;
 
       const singleWordTooWide =
-        words.length === 1 && ctx.measureText(machine.type).width > maxTextWidth;
+        words.length === 1 && ctx.measureText(labelSource).width > maxTextWidth;
 
       if (!singleWordTooWide && widestLine <= maxTextWidth && totalHeight <= maxTextHeight) {
         break;
       }
 
-      if (words.length === 1 && ctx.measureText(machine.type).width <= maxTextWidth) {
+      if (words.length === 1 && ctx.measureText(labelSource).width <= maxTextWidth) {
         break;
       }
 
@@ -2120,7 +2124,7 @@ function drawMachines() {
 
     ctx.font = `${fontSize}px Arial`;
 
-        // ===== label content =====
+    // ===== label content =====
     let labelText = machine.recipeName || machine.type;
 
     if (machine.recipeName) {
@@ -2128,6 +2132,8 @@ function drawMachines() {
     }
 
     // ===== draw main label =====
+    ctx.fillStyle = machine.textColor || "#0b0f14";
+
     drawWrappedMachineLabel(
       ctx,
       labelText,
@@ -2140,7 +2146,7 @@ function drawMachines() {
 
     // ===== optional tiny block position tag =====
     if (machine.blockPosition && state.camera.zoom > 12) {
-      ctx.fillStyle = "#ffffffcc";
+      ctx.fillStyle = "rgba(255, 255, 255, 0.85)";
       ctx.font = "10px Arial";
       ctx.textAlign = "right";
       ctx.textBaseline = "bottom";
@@ -2150,15 +2156,12 @@ function drawMachines() {
         screenPos.x + widthPx - 3,
         screenPos.y + heightPx - 3
       );
-
-      ctx.textAlign = "start";
-      ctx.textBaseline = "alphabetic";
     }
+
     ctx.textAlign = "start";
     ctx.textBaseline = "alphabetic";
-    }
   }
-
+}
 
 function drawMarquee() {
   if (!state.marqueeRect) return;
