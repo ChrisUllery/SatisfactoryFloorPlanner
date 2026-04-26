@@ -1254,17 +1254,36 @@ addMachineBtn.addEventListener("click", async () => {
   }
 
   const machineCount = getRequestedMachineCount();
+
+  logPlannerEvent("manual_recipe_add", {
+    recipe_name: recipe.Name,
+    machine_type: recipe.Machine,
+    machine_count: machineCount
+  });
+
   placeMachineClusterFromRecipe(recipe, machineCount);
 });
 
 plannerViewBtn.addEventListener("click", () => {
   state.viewMode = "planner";
+
+  logPlannerEvent("planner_view_open", {
+    machine_count: state.machines.length
+  });
+
   updateViewModeUI();
   draw();
 });
 
 summaryViewBtn.addEventListener("click", () => {
   state.viewMode = "summary";
+
+  logPlannerEvent("summary_view_open", {
+    has_imported_rows: Boolean(state.lastImportedRows && state.lastImportedRows.length > 0),
+    recipe_blocks: state.lastImportedRows ? state.lastImportedRows.length : 0,
+    machine_count: state.machines.length
+  });
+
   updateViewModeUI();
 
   if (state.lastImportedRows && state.lastImportedRows.length > 0) {
@@ -2697,12 +2716,28 @@ function escapeHtml(str) {
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
 }
+
 function deleteSelectedMachines() {
   if (state.selectedMachineIds.length === 0) return;
+
+  const selectedMachines = getSelectedMachines();
+  const deletedCount = selectedMachines.length;
+  const recipeNames = [...new Set(
+    selectedMachines
+      .map(machine => machine.recipeName)
+      .filter(Boolean)
+  )];
+
+  logPlannerEvent("manual_machine_delete", {
+    machine_count: deletedCount,
+    recipe_count: recipeNames.length,
+    recipes: recipeNames.slice(0, 10).join(", ")
+  });
 
   state.machines = state.machines.filter(
     machine => !state.selectedMachineIds.includes(machine.id)
   );
+
   clearSelection();
   updateSelectedInfo();
   draw();
@@ -2912,13 +2947,49 @@ window.addEventListener("mouseup", () => {
     state.marqueeRect = null;
     updateSelectedInfo();
     draw();
+
+    logPlannerEvent("selection_marquee", {
+      selected_count: hits.length
+    });
+
     state.dragMode = null;
     state.isDragging = false;
     return;
   }
 
+  if (state.dragMode === "machine" && state.machineDragOffsets.length > 0) {
+    const movedMachines = state.machineDragOffsets
+      .map(info => {
+        const machine = getMachineById(info.id);
+        if (!machine) return null;
+
+        const moved =
+          Math.abs(machine.x - info.startX) > 1e-9 ||
+          Math.abs(machine.y - info.startY) > 1e-9;
+
+        return moved ? machine : null;
+      })
+      .filter(Boolean);
+
+    if (movedMachines.length > 0) {
+      const recipeNames = [...new Set(
+        movedMachines
+          .map(machine => machine.recipeName)
+          .filter(Boolean)
+      )];
+
+      logPlannerEvent("manual_machine_move", {
+        machine_count: movedMachines.length,
+        recipe_count: recipeNames.length,
+        recipes: recipeNames.slice(0, 10).join(", ")
+      });
+    }
+  }
+
   state.dragMode = null;
   state.marqueeRect = null;
+  state.machineDragOffsets = [];
+  state.isDragging = false;
 });
 
 window.addEventListener("keydown", event => {
@@ -2954,6 +3025,9 @@ window.addEventListener("keydown", event => {
     const proposals = buildGroupRotationProposals(selected, 90);
 
     if (!canApplyMachineProposals(proposals, ignoreIds)) {
+      logPlannerEvent("manual_machine_rotate_blocked", {
+        machine_count: selected.length
+      });
       return;
     }
 
@@ -2963,15 +3037,29 @@ window.addEventListener("keydown", event => {
       proposal.machine.rotation = proposal.rotation;
     }
 
+    const recipeNames = [...new Set(
+      selected
+        .map(machine => machine.recipeName)
+        .filter(Boolean)
+    )];
+
+    logPlannerEvent("manual_machine_rotate", {
+      machine_count: selected.length,
+      recipe_count: recipeNames.length,
+      recipes: recipeNames.slice(0, 10).join(", ")
+    });
+
     updateSelectedInfo();
     draw();
     return;
   }
 
   if (event.key === "Delete" || event.key === "Backspace") {
+    event.preventDefault();
     deleteSelectedMachines();
   }
 });
+
 window.getPlannerState = function () {
   return JSON.parse(JSON.stringify({
     camera: state.camera,
@@ -3025,7 +3113,7 @@ function setupAutoFoundationToggle() {
   toggle.addEventListener("change", () => {
     state.autoFoundations.enabled = toggle.checked;
 
-    logPlannerEvent("toggle_auto_foundations", {
+    logPlannerEvent("auto_foundations_toggle", {
       enabled: state.autoFoundations.enabled
     });
 
@@ -3040,6 +3128,88 @@ loadMachineCatalog().then(() => {
   updateSelectedInfo();
   updateViewModeUI();
 });
+
+function drawExportFoundationTile(exportCtx, exportWorldToScreen, worldX, worldY, tileSize, scale) {
+  const screenPos = exportWorldToScreen(worldX, worldY);
+  const sizePx = tileSize * scale;
+
+  if (foundationTexture && foundationTexture.complete && foundationTexture.naturalWidth > 0) {
+    exportCtx.drawImage(
+      foundationTexture,
+      screenPos.x,
+      screenPos.y,
+      sizePx,
+      sizePx
+    );
+
+    return;
+  }
+
+  // Fallback placeholder if texture is unavailable.
+  exportCtx.fillStyle = "#6b5a43";
+  exportCtx.fillRect(screenPos.x, screenPos.y, sizePx, sizePx);
+
+  const inset = Math.max(1, sizePx * 0.08);
+  exportCtx.fillStyle = "#7a684e";
+  exportCtx.fillRect(
+    screenPos.x + inset,
+    screenPos.y + inset,
+    sizePx - inset * 2,
+    sizePx - inset * 2
+  );
+
+  exportCtx.fillStyle = "rgba(255, 255, 255, 0.055)";
+  exportCtx.fillRect(
+    screenPos.x + sizePx * 0.22,
+    screenPos.y + sizePx * 0.18,
+    sizePx * 0.56,
+    sizePx * 0.64
+  );
+
+  exportCtx.strokeStyle = "rgba(230, 210, 170, 0.55)";
+  exportCtx.lineWidth = Math.max(1, scale * 0.035);
+  exportCtx.strokeRect(screenPos.x, screenPos.y, sizePx, sizePx);
+
+  exportCtx.strokeStyle = "rgba(20, 16, 12, 0.55)";
+  exportCtx.lineWidth = Math.max(1, scale * 0.025);
+
+  exportCtx.beginPath();
+  exportCtx.moveTo(screenPos.x + sizePx, screenPos.y);
+  exportCtx.lineTo(screenPos.x + sizePx, screenPos.y + sizePx);
+  exportCtx.moveTo(screenPos.x, screenPos.y + sizePx);
+  exportCtx.lineTo(screenPos.x + sizePx, screenPos.y + sizePx);
+  exportCtx.stroke();
+}
+
+function drawExportAutoFoundations(exportCtx, exportWorldToScreen, scale) {
+  if (!state.autoFoundations?.enabled) {
+    return;
+  }
+
+  if (!state.machines || state.machines.length === 0) {
+    return;
+  }
+
+  const tileSize = state.autoFoundations.tileSize || FOUNDATION_SIZE;
+  const cells = collectAutoFoundationCells();
+
+  exportCtx.save();
+  exportCtx.globalAlpha = state.autoFoundations.opacity ?? 0.72;
+
+  for (const cell of cells) {
+    drawExportFoundationTile(
+      exportCtx,
+      exportWorldToScreen,
+      cell.col * tileSize,
+      cell.row * tileSize,
+      tileSize,
+      scale
+    );
+  }
+
+  exportCtx.restore();
+}
+
 function exportLayoutPng() {
   if (!state.machines || state.machines.length === 0) {
     alert("There is no layout to export yet.");
@@ -3056,7 +3226,7 @@ function exportLayoutPng() {
   const maxX = Math.max(...boundsList.map(b => b.right));
   const maxY = Math.max(...boundsList.map(b => b.bottom));
 
-  const padding = 4;
+  const padding = FOUNDATION_SIZE;
   const scale = 20;
 
   const worldLeft = minX - padding;
@@ -3137,7 +3307,8 @@ function exportLayoutPng() {
     exportCtx.lineTo(exportCanvas.width, sy);
     exportCtx.stroke();
   }
-
+  // ===== auto foundations =====
+  drawExportAutoFoundations(exportCtx, exportWorldToScreen, scale);
   // ===== machines =====
   for (const machine of state.machines) {
     const footprint = getMachineFootprint(machine);
