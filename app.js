@@ -20,8 +20,41 @@ const summaryPreviewCtx = summaryPreviewCanvas
 const exportSummaryPdfBtn = document.getElementById("exportSummaryPdfBtn");
 const FOUNDATION_SIZE = 8;
 const SNAP_SIZE = 0.5;
-const MIN_ZOOM = 4;
-const MAX_ZOOM = 80;
+const MIN_ZOOM = 0.15;
+const MAX_ZOOM = 20;
+
+const WORLD_MAP_PATH = "assets/beige-map.jpg";
+
+const worldMap = {
+  image: new Image(),
+  loaded: false,
+  visible: true,
+  opacity: 0.75,
+
+  // First real-scale pass.
+  x: -3986,
+  y: -3400,
+  width: 7972,
+  height: 6800
+};
+
+worldMap.image.onload = () => {
+  worldMap.loaded = true;
+  console.log("World map loaded:", {
+    src: WORLD_MAP_PATH,
+    naturalWidth: worldMap.image.naturalWidth,
+    naturalHeight: worldMap.image.naturalHeight
+  });
+  draw();
+};
+
+worldMap.image.onerror = () => {
+  console.warn(`Could not load world map image: ${WORLD_MAP_PATH}`);
+};
+
+worldMap.image.src = WORLD_MAP_PATH;
+
+
 
 let machineCatalog = {};
 
@@ -655,7 +688,7 @@ const state = {
   camera: {
     x: 0,
     y: 0,
-    zoom: 20
+    zoom: 3
   },
   machines: [],
   selectedMachineIds: [],
@@ -676,10 +709,16 @@ const state = {
 
 function resizeCanvas() {
   const rect = canvas.getBoundingClientRect();
+
   canvas.width = rect.width * window.devicePixelRatio;
   canvas.height = rect.height * window.devicePixelRatio;
+
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+
+  state.camera.zoom = Math.max(getEffectiveMinZoom(), state.camera.zoom);
+  clampCameraToWorldMap();
+
   draw();
 }
 
@@ -695,6 +734,47 @@ function screenToWorld(sx, sy) {
     x: (sx - state.camera.x) / state.camera.zoom,
     y: (sy - state.camera.y) / state.camera.zoom
   };
+}
+
+function getEffectiveMinZoom() {
+  const rect = canvas.getBoundingClientRect();
+
+  const minZoomToCoverWidth = rect.width / worldMap.width;
+  const minZoomToCoverHeight = rect.height / worldMap.height;
+
+  return Math.max(
+    MIN_ZOOM,
+    minZoomToCoverWidth,
+    minZoomToCoverHeight
+  );
+}
+
+function clampCameraToWorldMap() {
+  const rect = canvas.getBoundingClientRect();
+  const zoom = state.camera.zoom;
+
+  const mapLeftScreen = worldMap.x * zoom;
+  const mapRightScreen = (worldMap.x + worldMap.width) * zoom;
+  const mapTopScreen = worldMap.y * zoom;
+  const mapBottomScreen = (worldMap.y + worldMap.height) * zoom;
+
+  const minCameraX = rect.width - mapRightScreen;
+  const maxCameraX = -mapLeftScreen;
+
+  const minCameraY = rect.height - mapBottomScreen;
+  const maxCameraY = -mapTopScreen;
+
+  if (minCameraX > maxCameraX) {
+    state.camera.x = (minCameraX + maxCameraX) / 2;
+  } else {
+    state.camera.x = Math.max(minCameraX, Math.min(maxCameraX, state.camera.x));
+  }
+
+  if (minCameraY > maxCameraY) {
+    state.camera.y = (minCameraY + maxCameraY) / 2;
+  } else {
+    state.camera.y = Math.max(minCameraY, Math.min(maxCameraY, state.camera.y));
+  }
 }
 
 function snap(value) {
@@ -1999,6 +2079,30 @@ importFactoryBtn.addEventListener("click", async () => {
   }
 });
 
+function drawWorldMap() {
+  if (!worldMap.visible || !worldMap.loaded) return;
+
+  const topLeft = worldToScreen(worldMap.x, worldMap.y);
+  const bottomRight = worldToScreen(
+    worldMap.x + worldMap.width,
+    worldMap.y + worldMap.height
+  );
+
+  const drawWidth = bottomRight.x - topLeft.x;
+  const drawHeight = bottomRight.y - topLeft.y;
+
+  ctx.save();
+  ctx.globalAlpha = worldMap.opacity;
+  ctx.drawImage(
+    worldMap.image,
+    topLeft.x,
+    topLeft.y,
+    drawWidth,
+    drawHeight
+  );
+  ctx.restore();
+}
+
 function drawGrid() {
   const rect = canvas.getBoundingClientRect();
   const width = rect.width;
@@ -2007,20 +2111,26 @@ function drawGrid() {
   const topLeft = screenToWorld(0, 0);
   const bottomRight = screenToWorld(width, height);
 
-  const minorStep = SNAP_SIZE;
   const foundationStep = FOUNDATION_SIZE;
-
-  const startXMinor = Math.floor(topLeft.x / minorStep) * minorStep;
-  const endXMinor = Math.ceil(bottomRight.x / minorStep) * minorStep;
-  const startYMinor = Math.floor(topLeft.y / minorStep) * minorStep;
-  const endYMinor = Math.ceil(bottomRight.y / minorStep) * minorStep;
+  const regionStep = FOUNDATION_SIZE * 10;
 
   ctx.lineWidth = 1;
 
-  if (state.camera.zoom >= 12) {
-    ctx.strokeStyle = "#1f2a33";
+  // Far zoomed out: no grid. Keep the world map readable.
+  if (state.camera.zoom < 0.5) {
+    return;
+  }
 
-    for (let x = startXMinor; x <= endXMinor; x += minorStep) {
+  // Medium-far zoom: draw only a coarse 10-foundation grid.
+  if (state.camera.zoom < 3) {
+    const startXRegion = Math.floor(topLeft.x / regionStep) * regionStep;
+    const endXRegion = Math.ceil(bottomRight.x / regionStep) * regionStep;
+    const startYRegion = Math.floor(topLeft.y / regionStep) * regionStep;
+    const endYRegion = Math.ceil(bottomRight.y / regionStep) * regionStep;
+
+    ctx.strokeStyle = "rgba(58, 74, 87, 0.45)";
+
+    for (let x = startXRegion; x <= endXRegion; x += regionStep) {
       const sx = worldToScreen(x, 0).x;
       ctx.beginPath();
       ctx.moveTo(sx, 0);
@@ -2028,21 +2138,24 @@ function drawGrid() {
       ctx.stroke();
     }
 
-    for (let y = startYMinor; y <= endYMinor; y += minorStep) {
+    for (let y = startYRegion; y <= endYRegion; y += regionStep) {
       const sy = worldToScreen(0, y).y;
       ctx.beginPath();
       ctx.moveTo(0, sy);
       ctx.lineTo(width, sy);
       ctx.stroke();
     }
+
+    return;
   }
 
+  // Normal/close zoom: draw only the 8m foundation grid.
   const startXFoundation = Math.floor(topLeft.x / foundationStep) * foundationStep;
   const endXFoundation = Math.ceil(bottomRight.x / foundationStep) * foundationStep;
   const startYFoundation = Math.floor(topLeft.y / foundationStep) * foundationStep;
   const endYFoundation = Math.ceil(bottomRight.y / foundationStep) * foundationStep;
 
-  ctx.strokeStyle = "#3a4a57";
+  ctx.strokeStyle = "rgba(58, 74, 87, 0.75)";
 
   for (let x = startXFoundation; x <= endXFoundation; x += foundationStep) {
     const sx = worldToScreen(x, 0).x;
@@ -2134,9 +2247,14 @@ function drawGroupLabel(machine, screenPos, widthPx, heightPx) {
   ];
 
   let fontSize = Math.floor(Math.min(widthPx, heightPx) * 0.11);
-  fontSize = Math.max(10, Math.min(22, fontSize));
+  fontSize = Math.min(22, fontSize);
 
-  while (fontSize > 8) {
+  // At far zoom levels, labels should disappear instead of staying oversized.
+  if (fontSize < 6 || widthPx < 50 || heightPx < 32) {
+    return;
+  }
+
+  while (fontSize > 6) {
     ctx.font = `bold ${fontSize}px Arial`;
     const line1Width = ctx.measureText(lines[0]).width;
 
@@ -2153,7 +2271,7 @@ function drawGroupLabel(machine, screenPos, widthPx, heightPx) {
   }
 
   const titleFont = `bold ${fontSize}px Arial`;
-  const bodyFont = `${Math.max(fontSize - 1, 8)}px Arial`;
+  const bodyFont = `${Math.max(fontSize - 1, 6)}px Arial`;
   const lineHeight = fontSize * 1.35;
   const totalHeight = lineHeight * 4;
   let y = centerY - totalHeight / 2 + lineHeight * 0.8;
@@ -2239,77 +2357,82 @@ function drawMachines() {
     const maxTextHeight = Math.max(16, heightPx - paddingY * 2);
 
     let fontSize = Math.floor(Math.min(widthPx, heightPx) * 0.18);
-    fontSize = Math.max(8, Math.min(24, fontSize));
+    fontSize = Math.min(24, fontSize);
 
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
+    // At far zoom levels, labels should disappear instead of staying oversized.
+    if (fontSize >= 5 && widthPx >= 18 && heightPx >= 14) {
+      ctx.fillStyle = "#0b0f14";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
 
-    while (fontSize > 8) {
-      ctx.font = `${fontSize}px Arial`;
+      while (fontSize > 5) {
+        ctx.font = `${fontSize}px Arial`;
 
-      const labelSource = machine.recipeName || machine.type;
-      const words = labelSource.split(" ");
-      const lineHeight = fontSize * 1.15;
+        const labelPreview = machine.recipeName
+          ? `${machine.recipeName} ${machine.type}`
+          : machine.type;
 
-      let lines = [];
-      let currentLine = words[0] || "";
+        const words = labelPreview.split(" ");
+        const lineHeight = fontSize * 1.15;
 
-      for (let i = 1; i < words.length; i++) {
-        const testLine = `${currentLine} ${words[i]}`;
-        if (ctx.measureText(testLine).width <= maxTextWidth) {
-          currentLine = testLine;
-        } else {
-          lines.push(currentLine);
-          currentLine = words[i];
+        let lines = [];
+        let currentLine = words[0] || "";
+
+        for (let i = 1; i < words.length; i++) {
+          const testLine = `${currentLine} ${words[i]}`;
+          if (ctx.measureText(testLine).width <= maxTextWidth) {
+            currentLine = testLine;
+          } else {
+            lines.push(currentLine);
+            currentLine = words[i];
+          }
         }
+
+        if (currentLine) {
+          lines.push(currentLine);
+        }
+
+        const widestLine = Math.max(...lines.map(line => ctx.measureText(line).width), 0);
+        const totalHeight = lines.length * lineHeight;
+
+        const singleWordTooWide =
+          words.length === 1 && ctx.measureText(labelPreview).width > maxTextWidth;
+
+        if (!singleWordTooWide && widestLine <= maxTextWidth && totalHeight <= maxTextHeight) {
+          break;
+        }
+
+        if (words.length === 1 && ctx.measureText(labelPreview).width <= maxTextWidth) {
+          break;
+        }
+
+        fontSize -= 1;
       }
 
-      if (currentLine) {
-        lines.push(currentLine);
+      if (fontSize >= 5) {
+        ctx.font = `${fontSize}px Arial`;
+
+        let labelText = machine.recipeName || machine.type;
+
+        if (machine.recipeName) {
+          labelText = `${machine.recipeName}\n${machine.type}`;
+        }
+
+        drawWrappedMachineLabel(
+          ctx,
+          labelText,
+          screenPos.x + widthPx / 2,
+          screenPos.y + heightPx / 2,
+          maxTextWidth,
+          maxTextHeight,
+          fontSize
+        );
       }
-
-      const widestLine = Math.max(...lines.map(line => ctx.measureText(line).width), 0);
-      const totalHeight = lines.length * lineHeight;
-
-      const singleWordTooWide =
-        words.length === 1 && ctx.measureText(labelSource).width > maxTextWidth;
-
-      if (!singleWordTooWide && widestLine <= maxTextWidth && totalHeight <= maxTextHeight) {
-        break;
-      }
-
-      if (words.length === 1 && ctx.measureText(labelSource).width <= maxTextWidth) {
-        break;
-      }
-
-      fontSize -= 1;
     }
 
-    ctx.font = `${fontSize}px Arial`;
-
-    // ===== label content =====
-    let labelText = machine.recipeName || machine.type;
-
-    if (machine.recipeName) {
-      labelText = `${machine.recipeName}\n${machine.type}`;
-    }
-
-    // ===== draw main label =====
-    ctx.fillStyle = machine.textColor || "#0b0f14";
-
-    drawWrappedMachineLabel(
-      ctx,
-      labelText,
-      screenPos.x + widthPx / 2,
-      screenPos.y + heightPx / 2,
-      maxTextWidth,
-      maxTextHeight,
-      fontSize
-    );
-
-    // ===== optional tiny block position tag =====
+    // Tiny block position tags should also disappear when zoomed far out.
     if (machine.blockPosition && state.camera.zoom > 12) {
-      ctx.fillStyle = "rgba(255, 255, 255, 0.85)";
+      ctx.fillStyle = "#ffffffcc";
       ctx.font = "10px Arial";
       ctx.textAlign = "right";
       ctx.textBaseline = "bottom";
@@ -2351,8 +2474,19 @@ function draw() {
     return;
   }
 
+  if (typeof drawWorldMap === "function") {
+    drawWorldMap();
+  }
+
+  if (typeof drawAutoFoundations === "function") {
+    drawAutoFoundations();
+  } else if (typeof drawFoundations === "function") {
+    drawFoundations();
+  } else if (typeof drawFoundationTiles === "function") {
+    drawFoundationTiles();
+  }
+
   drawGrid();
-  drawAutoFoundations();
   drawOrigin();
   drawMachines();
   drawMarquee();
@@ -2766,13 +2900,19 @@ canvas.addEventListener(
 
     const zoomFactor = event.deltaY < 0 ? 1.1 : 0.9;
     state.camera.zoom *= zoomFactor;
-    state.camera.zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, state.camera.zoom));
+
+    const effectiveMinZoom = getEffectiveMinZoom();
+    state.camera.zoom = Math.max(
+      effectiveMinZoom,
+      Math.min(MAX_ZOOM, state.camera.zoom)
+    );
 
     const afterZoom = screenToWorld(mouseX, mouseY);
 
     state.camera.x += (afterZoom.x - beforeZoom.x) * state.camera.zoom;
     state.camera.y += (afterZoom.y - beforeZoom.y) * state.camera.zoom;
 
+    clampCameraToWorldMap();
     draw();
   },
   { passive: false }
@@ -2854,6 +2994,8 @@ canvas.addEventListener("mousemove", event => {
 
     state.camera.x += dx;
     state.camera.y += dy;
+
+    clampCameraToWorldMap();
 
     state.dragStartScreen = { x: mouseX, y: mouseY };
     draw();
