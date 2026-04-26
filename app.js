@@ -2992,6 +2992,71 @@ window.addEventListener("mouseup", () => {
   state.isDragging = false;
 });
 
+let lastPointerClientPosition = {
+  x: window.innerWidth / 2,
+  y: window.innerHeight / 2
+};
+
+window.addEventListener("mousemove", event => {
+  lastPointerClientPosition = {
+    x: event.clientX,
+    y: event.clientY
+  };
+});
+
+function showPlannerToast(message, clientX = null, clientY = null) {
+  let toast = document.getElementById("plannerToast");
+
+  if (!toast) {
+    toast = document.createElement("div");
+    toast.id = "plannerToast";
+
+    Object.assign(toast.style, {
+      position: "fixed",
+      zIndex: "1000",
+      maxWidth: "280px",
+      padding: "10px 12px",
+      borderRadius: "8px",
+      background: "rgba(15, 20, 26, 0.96)",
+      border: "1px solid #ffd866",
+      color: "#e6edf3",
+      fontSize: "0.88rem",
+      lineHeight: "1.35",
+      boxShadow: "0 8px 24px rgba(0, 0, 0, 0.35)",
+      pointerEvents: "none",
+      opacity: "0",
+      transition: "opacity 0.12s ease"
+    });
+
+    document.body.appendChild(toast);
+  }
+
+  toast.textContent = message;
+
+  const x = clientX ?? lastPointerClientPosition.x;
+  const y = clientY ?? lastPointerClientPosition.y;
+
+  // Place slightly left/up from the pointer so it does not cover the cursor.
+  const offsetX = -300;
+  const offsetY = -10;
+
+  let left = x + offsetX;
+  let top = y + offsetY;
+
+  // Keep it onscreen.
+  left = Math.max(12, Math.min(left, window.innerWidth - 300));
+  top = Math.max(12, Math.min(top, window.innerHeight - 80));
+
+  toast.style.left = `${left}px`;
+  toast.style.top = `${top}px`;
+  toast.style.opacity = "1";
+
+  clearTimeout(toast.hideTimer);
+  toast.hideTimer = setTimeout(() => {
+    toast.style.opacity = "0";
+  }, 2600);
+}
+
 window.addEventListener("keydown", event => {
   const isMac = navigator.platform.toUpperCase().includes("MAC");
   const modKey = isMac ? event.metaKey : event.ctrlKey;
@@ -3028,6 +3093,11 @@ window.addEventListener("keydown", event => {
       logPlannerEvent("manual_machine_rotate_blocked", {
         machine_count: selected.length
       });
+
+      showPlannerToast(
+        "Machine block would overlap on rotate. Move this block away from other machines, then try again."
+      );
+
       return;
     }
 
