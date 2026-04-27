@@ -30,6 +30,7 @@ from typing import Any
 
 
 DEFAULT_OUTPUT_PATH = Path("tools/save-parser/output/save_overlay_debug.json")
+DEFAULT_CLEAN_OUTPUT_PATH = Path("tools/save-parser/output/save_overlay_v0.json")
 
 UNREAL_COMPRESSED_SIGNATURE = 0x9E2A83C1
 UNREAL_COMPRESSED_TAG = 0x22222222
@@ -527,6 +528,61 @@ def build_overlay_candidates(actors: list[FoundActor]) -> list[dict[str, Any]]:
         ),
     )
 
+def build_clean_overlay_v0(report: dict[str, Any]) -> dict[str, Any]:
+    """
+    Small planner-facing overlay file.
+
+    This intentionally excludes the huge diagnostic actor list and keeps only
+    the trusted v0 miner candidates. Later the planner can load this file or
+    use this same shape after a save upload.
+    """
+    header = report.get("header") or {}
+    overlay_candidates = report.get("overlay_candidates") or []
+
+    included = [
+        {
+            "actor_name": item["actor_name"],
+            "label": item["label"],
+            "x": item["x"],
+            "y": item["y"],
+            "z": item["z"],
+            "resource_type": item.get("resource_type"),
+            "purity": item.get("purity"),
+        }
+        for item in overlay_candidates
+        if item.get("include_in_v0_overlay")
+    ]
+
+    return {
+        "schema": "satisfactory-floor-planner-save-overlay-v0",
+        "source": {
+            "save_name": header.get("save_name"),
+            "session_name": header.get("session_name"),
+            "save_version": header.get("save_version"),
+            "build_version": header.get("build_version"),
+            "is_modded_save": header.get("is_modded_save"),
+            "mods_detected": report.get("mods_detected") or [],
+        },
+        "summary": {
+            "included_count": len(included),
+            "included_counts": dict(Counter(item["label"] for item in included)),
+            "resource_type_status": "not parsed yet",
+            "purity_status": "not parsed yet",
+        },
+        "overlay_layer": {
+            "id": "save_miners_v0",
+            "name": "Save Miners",
+            "type": "player_save_overlay",
+            "replaces_static_resource_nodes": False,
+            "notes": [
+                "Only conservative normal miner coordinates are included.",
+                "Oil, water, geothermal, and resource well objects are intentionally excluded for v0.",
+                "resource_type and purity are placeholders until mExtractableResource parsing is added.",
+            ],
+        },
+        "miners": included,
+    }
+
 
 def scan_for_target_actors(blob: bytes, verbose: bool = False) -> tuple[list[FoundActor], dict[str, Any]]:
     best_by_actor_name: dict[str, FoundActor] = {}
@@ -799,6 +855,13 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--clean-output",
+        type=Path,
+        default=DEFAULT_CLEAN_OUTPUT_PATH,
+        help=f"Clean v0 overlay JSON output path. Default: {DEFAULT_CLEAN_OUTPUT_PATH}",
+    )
+
+    parser.add_argument(
         "--verbose",
         action="store_true",
         help="Print readable debug messages. Never prints raw save bytes.",
@@ -807,11 +870,10 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument(
         "--no-json",
         action="store_true",
-        help="Print summary only; do not write JSON.",
+        help="Print summary only; do not write debug or clean JSON outputs.",
     )
 
     return parser.parse_args(argv)
-
 
 def main(argv: list[str]) -> int:
     args = parse_args(argv)
@@ -836,13 +898,18 @@ def main(argv: list[str]) -> int:
     if not args.no_json:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(json.dumps(report, indent=2), encoding="utf-8")
+
+        clean_overlay = build_clean_overlay_v0(report)
+        args.clean_output.parent.mkdir(parents=True, exist_ok=True)
+        args.clean_output.write_text(json.dumps(clean_overlay, indent=2), encoding="utf-8")
+
         print()
         print(f"Wrote JSON debug output: {args.output}")
+        print(f"Wrote clean v0 overlay output: {args.clean_output}")
 
     print()
     print("Reminder: this is diagnostic output only. Resource type/purity linking is not proven yet.")
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main(sys.argv[1:]))
