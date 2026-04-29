@@ -366,6 +366,39 @@ li {
     display: none !important;
   }
 }
+
+.foundation-controls {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.foundation-controls button {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #2d333b;
+  border-radius: 8px;
+  background: #1b2430;
+  color: #e6edf3;
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+
+.foundation-controls button:hover {
+  background: #243041;
+  border-color: #3d4c60;
+}
+
+.foundation-controls button.active {
+  border-color: #6fc2ff;
+  box-shadow: inset 0 0 0 1px #6fc2ff;
+}
+
+.foundation-angle-readout {
+  color: #c3ccd5;
+  font-size: 0.84rem;
+}
 /* Keep sidebar controls from overflowing their panel at browser zoom levels */
 .machine-picker,
 .machine-picker > *,

@@ -102,11 +102,24 @@
         </button>
 
         <div class="floating-help-body">
+          <div class="foundation-controls">
+            <button id="manualFoundationDrawBtn" type="button">Draw foundations</button>
+            <button id="rotateFoundationBtn" type="button">Rotate foundation 5°</button>
+            <button id="clearManualFoundationsBtn" type="button">Clear manual foundations</button>
+            <div class="foundation-angle-readout">
+              Foundation angle: <span id="foundationAngleValue">0°</span>
+            </div>
+          </div>
           <ul>
             <li><strong>Mouse wheel:</strong> Zoom</li>
             <li><strong>Middle mouse drag:</strong> Pan</li>
-            <li><strong>Left drag:</strong> Move machine or selected machines</li>
-            <li><strong>R:</strong> Rotate selected machine or selected machines</li>
+            <li><strong>Left drag machine:</strong> Move machine or selected machines</li>
+            <li><strong>Right drag:</strong> Select multiple machines</li>
+            <li><strong>R:</strong> Rotate selected machine/group by 5°</li>
+            <li><strong>Draw foundations mode:</strong></li>
+            <li>Left drag: Draw foundation line</li>
+            <li>Left + right drag: Draw foundation rectangle</li>
+            <li>Rotate Foundation button: Change foundation angle by 5°</li>
             <li><strong>Delete / Backspace:</strong> Remove selected machine</li>
           </ul>
         </div>

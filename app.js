@@ -18,8 +18,15 @@ const summaryPreviewCtx = summaryPreviewCanvas
   ? summaryPreviewCanvas.getContext("2d")
   : null;
 const exportSummaryPdfBtn = document.getElementById("exportSummaryPdfBtn");
+const manualFoundationDrawBtn = document.getElementById("manualFoundationDrawBtn");
+const rotateFoundationBtn = document.getElementById("rotateFoundationBtn");
+const clearManualFoundationsBtn = document.getElementById("clearManualFoundationsBtn");
+const foundationAngleValue = document.getElementById("foundationAngleValue");
+
 const FOUNDATION_SIZE = 8;
 const SNAP_SIZE = 0.5;
+const MACHINE_ROTATION_STEP = 5;
+const FOUNDATION_ROTATION_STEP = 5;
 const MIN_ZOOM = 0.15;
 const MAX_ZOOM = 20;
 
@@ -704,6 +711,16 @@ const state = {
     enabled: true,
     tileSize: FOUNDATION_SIZE,
     opacity: 0.72
+  },
+  manualFoundations: {
+    enabled: true,
+    drawingMode: false,
+    rotation: 0,
+    tiles: [],
+    hoverTile: null,
+    drawStartWorld: null,
+    drawPreviewTiles: [],
+    nextId: 1
   }
 };
 
@@ -826,10 +843,78 @@ function addToSelection(id) {
 }
 
 function getMachineFootprint(machine) {
-  const rotated = machine.rotation % 180 !== 0;
   return {
-    width: rotated ? machine.length : machine.width,
-    length: rotated ? machine.width : machine.length
+    width: machine.width,
+    length: machine.length
+  };
+}
+
+function degreesToRadians(degrees) {
+  return (degrees * Math.PI) / 180;
+}
+
+function normalizeDegrees(degrees) {
+  return ((degrees % 360) + 360) % 360;
+}
+
+function rotatePointAround(point, center, degrees) {
+  const radians = degreesToRadians(degrees);
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+  const dx = point.x - center.x;
+  const dy = point.y - center.y;
+
+  return {
+    x: center.x + dx * cos - dy * sin,
+    y: center.y + dx * sin + dy * cos
+  };
+}
+
+function getMachineCenter(machine, overrideX = machine.x, overrideY = machine.y) {
+  return {
+    x: overrideX + machine.width / 2,
+    y: overrideY + machine.length / 2
+  };
+}
+
+function getRotatedRectCorners(
+  machine,
+  overrideX = machine.x,
+  overrideY = machine.y,
+  overrideRotation = machine.rotation
+) {
+  const center = getMachineCenter(machine, overrideX, overrideY);
+  const halfWidth = machine.width / 2;
+  const halfLength = machine.length / 2;
+
+  const corners = [
+    { x: center.x - halfWidth, y: center.y - halfLength },
+    { x: center.x + halfWidth, y: center.y - halfLength },
+    { x: center.x + halfWidth, y: center.y + halfLength },
+    { x: center.x - halfWidth, y: center.y + halfLength }
+  ];
+
+  return corners.map(point =>
+    rotatePointAround(point, center, normalizeDegrees(overrideRotation))
+  );
+}
+
+function getAxisAlignedBoundsFromCorners(corners) {
+  const xs = corners.map(corner => corner.x);
+  const ys = corners.map(corner => corner.y);
+
+  const left = Math.min(...xs);
+  const right = Math.max(...xs);
+  const top = Math.min(...ys);
+  const bottom = Math.max(...ys);
+
+  return {
+    left,
+    top,
+    right,
+    bottom,
+    width: right - left,
+    length: bottom - top
   };
 }
 
@@ -839,18 +924,94 @@ function getMachineBounds(
   overrideY = machine.y,
   overrideRotation = machine.rotation
 ) {
-  const rotated = overrideRotation % 180 !== 0;
-  const width = rotated ? machine.length : machine.width;
-  const length = rotated ? machine.width : machine.length;
+  const corners = getRotatedRectCorners(machine, overrideX, overrideY, overrideRotation);
+  return getAxisAlignedBoundsFromCorners(corners);
+}
 
-  return {
-    left: overrideX,
-    top: overrideY,
-    right: overrideX + width,
-    bottom: overrideY + length,
-    width,
-    length
-  };
+function pointInRotatedMachine(worldPoint, machine) {
+  const center = getMachineCenter(machine);
+
+  const unrotatedPoint = rotatePointAround(
+    worldPoint,
+    center,
+    -normalizeDegrees(machine.rotation)
+  );
+
+  return (
+    unrotatedPoint.x >= machine.x &&
+    unrotatedPoint.x <= machine.x + machine.width &&
+    unrotatedPoint.y >= machine.y &&
+    unrotatedPoint.y <= machine.y + machine.length
+  );
+}
+
+function projectPolygon(axis, points) {
+  let min = Infinity;
+  let max = -Infinity;
+
+  for (const point of points) {
+    const projection = point.x * axis.x + point.y * axis.y;
+    min = Math.min(min, projection);
+    max = Math.max(max, projection);
+  }
+
+  return { min, max };
+}
+
+function polygonsOverlapSAT(pointsA, pointsB) {
+  const polygons = [pointsA, pointsB];
+
+  for (const points of polygons) {
+    for (let i = 0; i < points.length; i++) {
+      const p1 = points[i];
+      const p2 = points[(i + 1) % points.length];
+
+      const edge = {
+        x: p2.x - p1.x,
+        y: p2.y - p1.y
+      };
+
+      const axisRaw = {
+        x: -edge.y,
+        y: edge.x
+      };
+
+      const axisLength = Math.hypot(axisRaw.x, axisRaw.y);
+      if (!axisLength) continue;
+
+      const axis = {
+        x: axisRaw.x / axisLength,
+        y: axisRaw.y / axisLength
+      };
+
+      const projectionA = projectPolygon(axis, pointsA);
+      const projectionB = projectPolygon(axis, pointsB);
+
+      if (projectionA.max <= projectionB.min || projectionB.max <= projectionA.min) {
+        return false;
+      }
+    }
+  }
+
+  return true;
+}
+
+function machineBodiesOverlap(machineA, machineB, overrideA = {}, overrideB = {}) {
+  const cornersA = getRotatedRectCorners(
+    machineA,
+    overrideA.x ?? machineA.x,
+    overrideA.y ?? machineA.y,
+    overrideA.rotation ?? machineA.rotation
+  );
+
+  const cornersB = getRotatedRectCorners(
+    machineB,
+    overrideB.x ?? machineB.x,
+    overrideB.y ?? machineB.y,
+    overrideB.rotation ?? machineB.rotation
+  );
+
+  return polygonsOverlapSAT(cornersA, cornersB);
 }
 
 function getMachineBufferRects(
@@ -988,66 +1149,81 @@ function collectAutoFoundationCells() {
   return Array.from(occupied.values());
 }
 
-function drawFoundationTile(worldX, worldY, tileSize) {
-  const screenPos = worldToScreen(worldX, worldY);
+function drawFoundationTile(worldX, worldY, tileSize, rotation = 0, alpha = 1) {
+  const centerWorld = {
+    x: worldX + tileSize / 2,
+    y: worldY + tileSize / 2
+  };
+
+  const centerScreen = worldToScreen(centerWorld.x, centerWorld.y);
   const sizePx = tileSize * state.camera.zoom;
 
   const rect = canvas.getBoundingClientRect();
   if (
-    screenPos.x + sizePx < -64 ||
-    screenPos.y + sizePx < -64 ||
-    screenPos.x > rect.width + 64 ||
-    screenPos.y > rect.height + 64
+    centerScreen.x + sizePx < -64 ||
+    centerScreen.y + sizePx < -64 ||
+    centerScreen.x > rect.width + 64 ||
+    centerScreen.y > rect.height + 64
   ) {
     return;
   }
 
+  ctx.save();
+  ctx.globalAlpha *= alpha;
+  ctx.translate(centerScreen.x, centerScreen.y);
+  ctx.rotate(degreesToRadians(rotation));
+
+  const drawX = -sizePx / 2;
+  const drawY = -sizePx / 2;
+
   if (foundationTexture.complete && foundationTexture.naturalWidth > 0) {
     ctx.drawImage(
       foundationTexture,
-      screenPos.x,
-      screenPos.y,
+      drawX,
+      drawY,
       sizePx,
       sizePx
     );
 
+    ctx.restore();
     return;
   }
 
-  // Fallback placeholder if the image has not loaded or fails.
   ctx.fillStyle = "#6b5a43";
-  ctx.fillRect(screenPos.x, screenPos.y, sizePx, sizePx);
+  ctx.fillRect(drawX, drawY, sizePx, sizePx);
 
   const inset = Math.max(1, sizePx * 0.08);
   ctx.fillStyle = "#7a684e";
   ctx.fillRect(
-    screenPos.x + inset,
-    screenPos.y + inset,
+    drawX + inset,
+    drawY + inset,
     sizePx - inset * 2,
     sizePx - inset * 2
   );
 
   ctx.fillStyle = "rgba(255, 255, 255, 0.055)";
   ctx.fillRect(
-    screenPos.x + sizePx * 0.22,
-    screenPos.y + sizePx * 0.18,
+    drawX + sizePx * 0.22,
+    drawY + sizePx * 0.18,
     sizePx * 0.56,
     sizePx * 0.64
   );
 
   ctx.strokeStyle = "rgba(230, 210, 170, 0.55)";
   ctx.lineWidth = Math.max(1, state.camera.zoom * 0.035);
-  ctx.strokeRect(screenPos.x, screenPos.y, sizePx, sizePx);
+  ctx.strokeRect(drawX, drawY, sizePx, sizePx);
 
   ctx.strokeStyle = "rgba(20, 16, 12, 0.55)";
   ctx.lineWidth = Math.max(1, state.camera.zoom * 0.025);
 
   ctx.beginPath();
-  ctx.moveTo(screenPos.x + sizePx, screenPos.y);
-  ctx.lineTo(screenPos.x + sizePx, screenPos.y + sizePx);
-  ctx.moveTo(screenPos.x, screenPos.y + sizePx);
-  ctx.lineTo(screenPos.x + sizePx, screenPos.y + sizePx);
+  ctx.moveTo(drawX + sizePx, drawY);
+  ctx.lineTo(drawX + sizePx, drawY + sizePx);
+  ctx.moveTo(drawX, drawY + sizePx);
+  ctx.lineTo(drawX + sizePx, drawY + sizePx);
   ctx.stroke();
+
+  ctx.restore();
 }
 
 function drawAutoFoundations() {
@@ -1060,20 +1236,274 @@ function drawAutoFoundations() {
   }
 
   const tileSize = state.autoFoundations.tileSize || FOUNDATION_SIZE;
-  const cells = collectAutoFoundationCells();
 
   ctx.save();
   ctx.globalAlpha = state.autoFoundations.opacity ?? 0.72;
 
-  for (const cell of cells) {
-    drawFoundationTile(
-      cell.col * tileSize,
-      cell.row * tileSize,
-      tileSize
-    );
+  for (const machine of state.machines) {
+    const bodyCols = Math.max(1, Math.ceil(machine.width / tileSize));
+    const bodyRows = Math.max(1, Math.ceil(machine.length / tileSize));
+
+    // Add one tile column before and after the machine body for input/output buffers.
+    const totalCols = bodyCols + 2;
+    const totalRows = bodyRows;
+
+    const machineCenter = getMachineCenter(machine);
+
+    for (let row = 0; row < totalRows; row++) {
+      for (let col = 0; col < totalCols; col++) {
+        const localX =
+          -bodyCols * tileSize / 2 -
+          tileSize / 2 +
+          col * tileSize;
+
+        const localY =
+          -bodyRows * tileSize / 2 +
+          tileSize / 2 +
+          row * tileSize;
+
+        const tileCenter = rotatePointAround(
+          {
+            x: machineCenter.x + localX,
+            y: machineCenter.y + localY
+          },
+          machineCenter,
+          machine.rotation
+        );
+
+        drawFoundationTile(
+          tileCenter.x - tileSize / 2,
+          tileCenter.y - tileSize / 2,
+          tileSize,
+          machine.rotation
+        );
+      }
+    }
   }
 
   ctx.restore();
+}
+
+function getFoundationDrawAxes(rotation = state.manualFoundations.rotation) {
+  const angleRad = degreesToRadians(rotation);
+
+  const dir = {
+    x: Math.cos(angleRad),
+    y: Math.sin(angleRad)
+  };
+
+  const perp = {
+    x: -dir.y,
+    y: dir.x
+  };
+
+  return { dir, perp };
+}
+
+function getSnappedFoundationStart(worldPoint) {
+  return {
+    x: snap(worldPoint.x),
+    y: snap(worldPoint.y)
+  };
+}
+
+function buildManualFoundationPreview(
+  startWorld,
+  currentWorld,
+  fillArea = false,
+  curveMode = false
+) {
+  if (!startWorld || !currentWorld) return [];
+
+  const delta = {
+    x: currentWorld.x - startWorld.x,
+    y: currentWorld.y - startWorld.y
+  };
+
+  const distance = Math.hypot(delta.x, delta.y);
+
+  if (distance < FOUNDATION_SIZE * 0.35) {
+    return [{
+      centerX: startWorld.x,
+      centerY: startWorld.y,
+      rotation: state.manualFoundations.rotation
+    }];
+  }
+
+  // Rectangle mode stays axis-based.
+  if (fillArea) {
+    const { dir, perp } = getFoundationDrawAxes();
+
+    const primaryDistance = delta.x * dir.x + delta.y * dir.y;
+    const secondaryDistance = delta.x * perp.x + delta.y * perp.y;
+
+    const primaryCount = Math.floor(Math.abs(primaryDistance) / FOUNDATION_SIZE) + 1;
+    const secondaryCount = Math.floor(Math.abs(secondaryDistance) / FOUNDATION_SIZE) + 1;
+
+    const primarySign = primaryDistance >= 0 ? 1 : -1;
+    const secondarySign = secondaryDistance >= 0 ? 1 : -1;
+
+    const tiles = [];
+
+    for (let i = 0; i < primaryCount; i++) {
+      for (let j = 0; j < secondaryCount; j++) {
+        tiles.push({
+          centerX:
+            startWorld.x +
+            dir.x * FOUNDATION_SIZE * i * primarySign +
+            perp.x * FOUNDATION_SIZE * j * secondarySign,
+          centerY:
+            startWorld.y +
+            dir.y * FOUNDATION_SIZE * i * primarySign +
+            perp.y * FOUNDATION_SIZE * j * secondarySign,
+          rotation: state.manualFoundations.rotation
+        });
+      }
+    }
+
+    return tiles;
+  }
+
+  // Curve mode: each new tile rotates 5 degrees and advances slightly less than 8m
+  // so the foundations overlap instead of leaving gaps.
+  if (curveMode) {
+    const baseRotation = state.manualFoundations.rotation;
+    const baseAngleRad = degreesToRadians(baseRotation);
+
+    const forward = {
+      x: Math.cos(baseAngleRad),
+      y: Math.sin(baseAngleRad)
+    };
+
+    const cross = forward.x * delta.y - forward.y * delta.x;
+    const turnSign = cross >= 0 ? 1 : -1;
+
+    const forwardProjection = delta.x * forward.x + delta.y * forward.y;
+    const forwardSign = forwardProjection >= 0 ? 1 : -1;
+
+    const stepSpacing = FOUNDATION_SIZE - SNAP_SIZE;
+    const stepCount = Math.max(1, Math.floor(distance / stepSpacing) + 1);
+
+    const tiles = [];
+
+    let currentCenter = {
+      x: startWorld.x,
+      y: startWorld.y
+    };
+
+    let currentRotation = baseRotation;
+
+    tiles.push({
+      centerX: currentCenter.x,
+      centerY: currentCenter.y,
+      rotation: normalizeDegrees(currentRotation)
+    });
+
+    for (let i = 1; i < stepCount; i++) {
+      const nextRotation = normalizeDegrees(
+        currentRotation + FOUNDATION_ROTATION_STEP * turnSign * forwardSign
+      );
+
+      const travelAngle =
+        currentRotation +
+        (FOUNDATION_ROTATION_STEP * turnSign * forwardSign) / 2;
+
+      const travelAngleRad = degreesToRadians(travelAngle);
+
+      currentCenter = {
+        x: snap(currentCenter.x + Math.cos(travelAngleRad) * stepSpacing * forwardSign),
+        y: snap(currentCenter.y + Math.sin(travelAngleRad) * stepSpacing * forwardSign)
+      };
+
+      currentRotation = nextRotation;
+
+      tiles.push({
+        centerX: currentCenter.x,
+        centerY: currentCenter.y,
+        rotation: currentRotation
+      });
+    }
+
+    return tiles;
+  }
+
+  // Normal line mode: straight end-to-end rows only.
+  let dir;
+  let perp;
+
+  if (Math.abs(delta.x) >= Math.abs(delta.y)) {
+    dir = { x: delta.x >= 0 ? 1 : -1, y: 0 };
+    perp = { x: 0, y: 1 };
+  } else {
+    dir = { x: 0, y: delta.y >= 0 ? 1 : -1 };
+    perp = { x: 1, y: 0 };
+  }
+
+  const primaryDistance = delta.x * dir.x + delta.y * dir.y;
+  const secondaryDistance = delta.x * perp.x + delta.y * perp.y;
+
+  const primaryCount = Math.floor(Math.abs(primaryDistance) / FOUNDATION_SIZE) + 1;
+  const secondaryCount = 1;
+  const secondarySign = secondaryDistance >= 0 ? 1 : -1;
+
+  const tiles = [];
+
+  for (let i = 0; i < primaryCount; i++) {
+    for (let j = 0; j < secondaryCount; j++) {
+      tiles.push({
+        centerX:
+          startWorld.x +
+          dir.x * FOUNDATION_SIZE * i +
+          perp.x * FOUNDATION_SIZE * j * secondarySign,
+        centerY:
+          startWorld.y +
+          dir.y * FOUNDATION_SIZE * i +
+          perp.y * FOUNDATION_SIZE * j * secondarySign,
+        rotation: state.manualFoundations.rotation
+      });
+    }
+  }
+
+  return tiles;
+}
+
+function drawManualFoundations() {
+  if (!state.manualFoundations.enabled) return;
+
+  for (const tile of state.manualFoundations.tiles) {
+    drawFoundationTile(
+      tile.centerX - FOUNDATION_SIZE / 2,
+      tile.centerY - FOUNDATION_SIZE / 2,
+      FOUNDATION_SIZE,
+      tile.rotation
+    );
+  }
+
+  if (state.manualFoundations.drawPreviewTiles.length > 0) {
+    for (const tile of state.manualFoundations.drawPreviewTiles) {
+      drawFoundationTile(
+        tile.centerX - FOUNDATION_SIZE / 2,
+        tile.centerY - FOUNDATION_SIZE / 2,
+        FOUNDATION_SIZE,
+        tile.rotation,
+        0.55
+      );
+    }
+
+    return;
+  }
+
+  if (state.manualFoundations.drawingMode && state.manualFoundations.hoverTile) {
+    const tile = state.manualFoundations.hoverTile;
+
+    drawFoundationTile(
+      tile.centerX - FOUNDATION_SIZE / 2,
+      tile.centerY - FOUNDATION_SIZE / 2,
+      FOUNDATION_SIZE,
+      tile.rotation,
+      0.55
+    );
+  }
 }
 
 function rectSetsOverlap(rectsA, rectsB) {
@@ -1094,15 +1524,17 @@ function wouldMachineOverlap(
   testRotation = machine.rotation,
   ignoreIds = []
 ) {
-  const testRects = getMachineOccupiedRects(machine, testX, testY, testRotation);
-
   for (const other of state.machines) {
     if (other.id === machine.id) continue;
     if (ignoreIds.includes(other.id)) continue;
 
-    const otherRects = getMachineOccupiedRects(other);
-
-    if (rectSetsOverlap(testRects, otherRects)) {
+    if (
+      machineBodiesOverlap(
+        machine,
+        other,
+        { x: testX, y: testY, rotation: testRotation }
+      )
+    ) {
       return true;
     }
   }
@@ -1819,10 +2251,7 @@ function canPlaceImportedCluster(clusterMachines, extraMachines = []) {
     for (const other of blockers) {
       if (!other || clusterIds.has(other.id)) continue;
 
-      const aRects = getMachineOccupiedRects(machine);
-      const bRects = getMachineOccupiedRects(other);
-
-      if (rectSetsOverlap(aRects, bRects)) {
+      if (machineBodiesOverlap(machine, other)) {
         return false;
       }
     }
@@ -2295,61 +2724,60 @@ function drawGroupLabel(machine, screenPos, widthPx, heightPx) {
 
 function drawMachines() {
   for (const machine of state.machines) {
-    const footprint = getMachineFootprint(machine);
-    const screenPos = worldToScreen(machine.x, machine.y);
+    const centerWorld = getMachineCenter(machine);
+    const centerScreen = worldToScreen(centerWorld.x, centerWorld.y);
 
-    const widthPx = footprint.width * state.camera.zoom;
-    const heightPx = footprint.length * state.camera.zoom;
+    const widthPx = machine.width * state.camera.zoom;
+    const heightPx = machine.length * state.camera.zoom;
+    const halfWidthPx = widthPx / 2;
+    const halfHeightPx = heightPx / 2;
+
+    ctx.save();
+    ctx.translate(centerScreen.x, centerScreen.y);
+    ctx.rotate(degreesToRadians(machine.rotation));
 
     if (machine.isGroup) {
       ctx.fillStyle = machine.color || "#2f4257";
       ctx.globalAlpha = 0.82;
-      ctx.fillRect(screenPos.x, screenPos.y, widthPx, heightPx);
+      ctx.fillRect(-halfWidthPx, -halfHeightPx, widthPx, heightPx);
       ctx.globalAlpha = 1;
 
       ctx.strokeStyle = isMachineSelected(machine.id) ? "#ffd866" : "#6fc2ff";
       ctx.lineWidth = isMachineSelected(machine.id) ? 3 : 2;
-      ctx.strokeRect(screenPos.x, screenPos.y, widthPx, heightPx);
+      ctx.strokeRect(-halfWidthPx, -halfHeightPx, widthPx, heightPx);
 
-      drawGroupLabel(machine, screenPos, widthPx, heightPx);
+      ctx.restore();
+
+      const labelTopLeft = {
+        x: centerScreen.x - halfWidthPx,
+        y: centerScreen.y - halfHeightPx
+      };
+      drawGroupLabel(machine, labelTopLeft, widthPx, heightPx);
       continue;
     }
 
     ctx.fillStyle = machine.color;
-    ctx.fillRect(screenPos.x, screenPos.y, widthPx, heightPx);
+    ctx.fillRect(-halfWidthPx, -halfHeightPx, widthPx, heightPx);
 
-    const buffers = getMachineBufferRects(machine);
+    const bufferDepthPx = state.camera.zoom;
+    const bodyLeft = -halfWidthPx;
+    const bodyTop = -halfHeightPx;
+    const bodyRight = halfWidthPx;
 
-    ctx.save();
+    ctx.fillStyle = "rgba(80, 200, 120, 0.22)";
+    ctx.strokeStyle = "rgba(80, 200, 120, 0.55)";
+    ctx.lineWidth = 1;
+    ctx.fillRect(bodyLeft - bufferDepthPx, bodyTop, bufferDepthPx, heightPx);
+    ctx.strokeRect(bodyLeft - bufferDepthPx, bodyTop, bufferDepthPx, heightPx);
 
-    if (buffers.input) {
-      const topLeft = worldToScreen(buffers.input.left, buffers.input.top);
-      const bufferWidthPx = (buffers.input.right - buffers.input.left) * state.camera.zoom;
-      const bufferHeightPx = (buffers.input.bottom - buffers.input.top) * state.camera.zoom;
-
-      ctx.fillStyle = "rgba(80, 200, 120, 0.22)";
-      ctx.strokeStyle = "rgba(80, 200, 120, 0.55)";
-      ctx.lineWidth = 1;
-      ctx.fillRect(topLeft.x, topLeft.y, bufferWidthPx, bufferHeightPx);
-      ctx.strokeRect(topLeft.x, topLeft.y, bufferWidthPx, bufferHeightPx);
-    }
-
-    if (buffers.output) {
-      const topLeft = worldToScreen(buffers.output.left, buffers.output.top);
-      const bufferWidthPx = (buffers.output.right - buffers.output.left) * state.camera.zoom;
-      const bufferHeightPx = (buffers.output.bottom - buffers.output.top) * state.camera.zoom;
-
-      ctx.fillStyle = "rgba(255, 215, 0, 0.18)";
-      ctx.strokeStyle = "rgba(255, 215, 0, 0.45)";
-      ctx.fillRect(topLeft.x, topLeft.y, bufferWidthPx, bufferHeightPx);
-      ctx.strokeRect(topLeft.x, topLeft.y, bufferWidthPx, bufferHeightPx);
-    }
-
-    ctx.restore();
+    ctx.fillStyle = "rgba(255, 215, 0, 0.18)";
+    ctx.strokeStyle = "rgba(255, 215, 0, 0.45)";
+    ctx.fillRect(bodyRight, bodyTop, bufferDepthPx, heightPx);
+    ctx.strokeRect(bodyRight, bodyTop, bufferDepthPx, heightPx);
 
     ctx.strokeStyle = isMachineSelected(machine.id) ? "#ffd866" : "#0b0f14";
     ctx.lineWidth = isMachineSelected(machine.id) ? 3 : 1.5;
-    ctx.strokeRect(screenPos.x, screenPos.y, widthPx, heightPx);
+    ctx.strokeRect(-halfWidthPx, -halfHeightPx, widthPx, heightPx);
 
     const paddingX = 8;
     const paddingY = 8;
@@ -2359,9 +2787,8 @@ function drawMachines() {
     let fontSize = Math.floor(Math.min(widthPx, heightPx) * 0.18);
     fontSize = Math.min(24, fontSize);
 
-    // At far zoom levels, labels should disappear instead of staying oversized.
     if (fontSize >= 5 && widthPx >= 18 && heightPx >= 14) {
-      ctx.fillStyle = "#0b0f14";
+      ctx.fillStyle = machine.textColor || "#0b0f14";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
 
@@ -2421,8 +2848,8 @@ function drawMachines() {
         drawWrappedMachineLabel(
           ctx,
           labelText,
-          screenPos.x + widthPx / 2,
-          screenPos.y + heightPx / 2,
+          0,
+          0,
           maxTextWidth,
           maxTextHeight,
           fontSize
@@ -2430,7 +2857,6 @@ function drawMachines() {
       }
     }
 
-    // Tiny block position tags should also disappear when zoomed far out.
     if (machine.blockPosition && state.camera.zoom > 12) {
       ctx.fillStyle = "#ffffffcc";
       ctx.font = "10px Arial";
@@ -2439,11 +2865,12 @@ function drawMachines() {
 
       ctx.fillText(
         `${machine.blockPosition.row},${machine.blockPosition.col}`,
-        screenPos.x + widthPx - 3,
-        screenPos.y + heightPx - 3
+        halfWidthPx - 3,
+        halfHeightPx - 3
       );
     }
 
+    ctx.restore();
     ctx.textAlign = "start";
     ctx.textBaseline = "alphabetic";
   }
@@ -2485,6 +2912,8 @@ function draw() {
   } else if (typeof drawFoundationTiles === "function") {
     drawFoundationTiles();
   }
+
+  drawManualFoundations();
 
   drawGrid();
   drawOrigin();
@@ -2545,15 +2974,8 @@ function hitTestMachine(screenX, screenY) {
 
   for (let i = state.machines.length - 1; i >= 0; i--) {
     const machine = state.machines[i];
-    const footprint = getMachineFootprint(machine);
 
-    const inside =
-      world.x >= machine.x &&
-      world.x <= machine.x + footprint.width &&
-      world.y >= machine.y &&
-      world.y <= machine.y + footprint.length;
-
-    if (inside) {
+    if (pointInRotatedMachine(world, machine)) {
       return machine;
     }
   }
@@ -2607,17 +3029,7 @@ function getBoundsCenter(bounds) {
   };
 }
 
-function rotatePointClockwiseAround(x, y, centerX, centerY) {
-  const dx = x - centerX;
-  const dy = y - centerY;
-
-  return {
-    x: centerX - dy,
-    y: centerY + dx
-  };
-}
-
-function buildGroupRotationProposals(machines, rotationStep = 90) {
+function buildGroupRotationProposals(machines, rotationStep = MACHINE_ROTATION_STEP) {
   if (machines.length === 0) return [];
 
   const groupBounds = getSelectionGroupBounds(machines);
@@ -2625,29 +3037,17 @@ function buildGroupRotationProposals(machines, rotationStep = 90) {
 
   const groupCenter = getBoundsCenter(groupBounds);
 
+  const cleanNumber = value => Math.round(value * 1000000) / 1000000;
+
   return machines.map(machine => {
-    const currentBounds = getMachineBounds(machine);
-    const currentCenter = {
-      x: currentBounds.left + currentBounds.width / 2,
-      y: currentBounds.top + currentBounds.length / 2
-    };
-
-    const rotatedCenter = rotatePointClockwiseAround(
-      currentCenter.x,
-      currentCenter.y,
-      groupCenter.x,
-      groupCenter.y
-    );
-
-    const newRotation = (machine.rotation + rotationStep) % 360;
-    const rotated = newRotation % 180 !== 0;
-    const newWidth = rotated ? machine.length : machine.width;
-    const newLength = rotated ? machine.width : machine.length;
+    const currentCenter = getMachineCenter(machine);
+    const rotatedCenter = rotatePointAround(currentCenter, groupCenter, rotationStep);
+    const newRotation = normalizeDegrees(machine.rotation + rotationStep);
 
     return {
       machine,
-      x: snap(rotatedCenter.x - newWidth / 2),
-      y: snap(rotatedCenter.y - newLength / 2),
+      x: cleanNumber(rotatedCenter.x - machine.width / 2),
+      y: cleanNumber(rotatedCenter.y - machine.length / 2),
       rotation: newRotation
     };
   });
@@ -2665,20 +3065,6 @@ function canApplyMachineProposals(proposals, ignoreIds = []) {
       )
     ) {
       return false;
-    }
-  }
-
-  for (let i = 0; i < proposals.length; i++) {
-    for (let j = i + 1; j < proposals.length; j++) {
-      const a = proposals[i];
-      const b = proposals[j];
-
-      const aRects = getMachineOccupiedRects(a.machine, a.x, a.y, a.rotation);
-      const bRects = getMachineOccupiedRects(b.machine, b.x, b.y, b.rotation);
-
-      if (rectSetsOverlap(aRects, bRects)) {
-        return false;
-      }
     }
   }
 
@@ -2751,12 +3137,7 @@ function canPasteClipboardAt(anchorX, anchorY) {
 
   for (const previewMachine of previewMachines) {
     for (const existing of state.machines) {
-      if (
-        rectSetsOverlap(
-          getMachineOccupiedRects(previewMachine),
-          getMachineOccupiedRects(existing)
-        )
-      ) {
+      if (machineBodiesOverlap(previewMachine, existing)) {
         return false;
       }
     }
@@ -2764,12 +3145,7 @@ function canPasteClipboardAt(anchorX, anchorY) {
 
   for (let i = 0; i < previewMachines.length; i++) {
     for (let j = i + 1; j < previewMachines.length; j++) {
-      if (
-        rectSetsOverlap(
-          getMachineOccupiedRects(previewMachines[i]),
-          getMachineOccupiedRects(previewMachines[j])
-        )
-      ) {
+      if (machineBodiesOverlap(previewMachines[i], previewMachines[j])) {
         return false;
       }
     }
@@ -2926,6 +3302,7 @@ canvas.addEventListener("mousedown", event => {
   state.dragStartScreen = { x: mouseX, y: mouseY };
 
   const hitMachine = hitTestMachine(mouseX, mouseY);
+  const worldPoint = screenToWorld(mouseX, mouseY);
 
   if (event.button === 1) {
     state.dragMode = "pan";
@@ -2968,12 +3345,34 @@ canvas.addEventListener("mousedown", event => {
     return;
   }
 
+  if (event.button === 0 && state.manualFoundations.drawingMode && !hitMachine) {
+    const snappedStart = getSnappedFoundationStart(worldPoint);
+
+    state.dragMode = "foundation-draw";
+    state.isDragging = false;
+    state.manualFoundations.drawStartWorld = snappedStart;
+    state.manualFoundations.hoverTile = {
+      centerX: snappedStart.x,
+      centerY: snappedStart.y,
+      rotation: state.manualFoundations.rotation
+    };
+    state.manualFoundations.drawPreviewTiles = buildManualFoundationPreview(
+      snappedStart,
+      worldPoint,
+      false
+    );
+
+    draw();
+    return;
+  }
+
   if (event.button === 0) {
     clearSelection();
     updateSelectedInfo();
     state.dragMode = "pan";
     state.isDragging = false;
     draw();
+    return;
   }
 });
 
@@ -2981,6 +3380,17 @@ canvas.addEventListener("mousemove", event => {
   const rect = canvas.getBoundingClientRect();
   const mouseX = event.clientX - rect.left;
   const mouseY = event.clientY - rect.top;
+  const world = screenToWorld(mouseX, mouseY);
+
+  if (state.manualFoundations.drawingMode && state.dragMode !== "foundation-draw") {
+    const snappedHover = getSnappedFoundationStart(world);
+    state.manualFoundations.hoverTile = {
+      centerX: snappedHover.x,
+      centerY: snappedHover.y,
+      rotation: state.manualFoundations.rotation
+    };
+    draw();
+  }
 
   if (state.dragMode === "pan") {
     const dx = mouseX - state.dragStartScreen.x;
@@ -3017,7 +3427,6 @@ canvas.addEventListener("mousemove", event => {
     const selectedMachines = getSelectedMachines();
     if (selectedMachines.length === 0) return;
 
-    const world = screenToWorld(mouseX, mouseY);
     const primaryOffset = state.machineDragOffsets[0];
     if (!primaryOffset) return;
 
@@ -3051,10 +3460,14 @@ canvas.addEventListener("mousemove", event => {
           const a = proposals[i];
           const b = proposals[j];
 
-          const aRects = getMachineOccupiedRects(a.machine, a.x, a.y, a.machine.rotation);
-          const bRects = getMachineOccupiedRects(b.machine, b.x, b.y, b.machine.rotation);
-
-          if (rectSetsOverlap(aRects, bRects)) {
+          if (
+            machineBodiesOverlap(
+              a.machine,
+              b.machine,
+              { x: a.x, y: a.y, rotation: a.machine.rotation },
+              { x: b.x, y: b.y, rotation: b.machine.rotation }
+            )
+          ) {
             return null;
           }
         }
@@ -3075,10 +3488,60 @@ canvas.addEventListener("mousemove", event => {
 
     updateSelectedInfo();
     draw();
+    return;
+  }
+
+  if (state.dragMode === "foundation-draw") {
+    const dx = mouseX - state.dragStartScreen.x;
+    const dy = mouseY - state.dragStartScreen.y;
+
+    if (!state.isDragging && (Math.abs(dx) >= 2 || Math.abs(dy) >= 2)) {
+      state.isDragging = true;
+    }
+
+    const fillArea = Boolean((event.buttons & 1) && (event.buttons & 2));
+    const curveMode = !fillArea && event.shiftKey;
+
+    state.manualFoundations.drawPreviewTiles = buildManualFoundationPreview(
+      state.manualFoundations.drawStartWorld,
+      world,
+      fillArea,
+      curveMode
+    );
+
+    draw();
+    return;
   }
 });
 
 window.addEventListener("mouseup", () => {
+  if (state.dragMode === "foundation-draw") {
+    const tilesToCommit =
+      state.manualFoundations.drawPreviewTiles.length > 0
+        ? state.manualFoundations.drawPreviewTiles
+        : state.manualFoundations.hoverTile
+          ? [state.manualFoundations.hoverTile]
+          : [];
+
+    for (const tile of tilesToCommit) {
+      state.manualFoundations.tiles.push({
+        id: state.manualFoundations.nextId++,
+        centerX: tile.centerX,
+        centerY: tile.centerY,
+        rotation: tile.rotation
+      });
+    }
+
+    state.manualFoundations.drawPreviewTiles = [];
+    state.manualFoundations.drawStartWorld = null;
+    state.dragMode = null;
+    state.marqueeRect = null;
+    state.machineDragOffsets = [];
+    state.isDragging = false;
+    draw();
+    return;
+  }
+
   if (state.dragMode === "marquee" && state.marqueeRect) {
     const worldRect = screenRectToWorldRect(state.marqueeRect);
     const hits = state.machines
@@ -3221,6 +3684,30 @@ window.addEventListener("keydown", event => {
     return;
   }
 
+  if (event.key.toLowerCase() === "r" && state.manualFoundations.drawingMode) {
+    event.preventDefault();
+
+    state.manualFoundations.rotation = normalizeDegrees(
+      state.manualFoundations.rotation + FOUNDATION_ROTATION_STEP
+    );
+
+    if (state.manualFoundations.hoverTile) {
+      state.manualFoundations.hoverTile.rotation = state.manualFoundations.rotation;
+    }
+
+    if (state.manualFoundations.drawPreviewTiles.length > 0) {
+      state.manualFoundations.drawPreviewTiles =
+        state.manualFoundations.drawPreviewTiles.map(tile => ({
+          ...tile,
+          rotation: state.manualFoundations.rotation
+        }));
+    }
+
+    updateManualFoundationControls();
+    draw();
+    return;
+  }
+
   const selected = getSelectedMachines();
 
   if (selected.length === 0) return;
@@ -3229,11 +3716,12 @@ window.addEventListener("keydown", event => {
     event.preventDefault();
 
     const ignoreIds = selected.map(machine => machine.id);
-    const proposals = buildGroupRotationProposals(selected, 90);
+    const proposals = buildGroupRotationProposals(selected, MACHINE_ROTATION_STEP);
 
     if (!canApplyMachineProposals(proposals, ignoreIds)) {
       logPlannerEvent("manual_machine_rotate_blocked", {
-        machine_count: selected.length
+        machine_count: selected.length,
+        rotation_step: MACHINE_ROTATION_STEP
       });
 
       showPlannerToast(
@@ -3257,6 +3745,7 @@ window.addEventListener("keydown", event => {
 
     logPlannerEvent("manual_machine_rotate", {
       machine_count: selected.length,
+      rotation_step: MACHINE_ROTATION_STEP,
       recipe_count: recipeNames.length,
       recipes: recipeNames.slice(0, 10).join(", ")
     });
@@ -3333,8 +3822,70 @@ function setupAutoFoundationToggle() {
   });
 }
 
+function updateManualFoundationControls() {
+  if (manualFoundationDrawBtn) {
+    manualFoundationDrawBtn.classList.toggle("active", state.manualFoundations.drawingMode);
+    manualFoundationDrawBtn.textContent = state.manualFoundations.drawingMode
+      ? "Drawing foundations: ON"
+      : "Draw foundations";
+  }
+
+  if (foundationAngleValue) {
+    foundationAngleValue.textContent = `${state.manualFoundations.rotation}°`;
+  }
+}
+
+function setupManualFoundationControls() {
+  if (!manualFoundationDrawBtn || !rotateFoundationBtn || !foundationAngleValue) {
+    return;
+  }
+
+  manualFoundationDrawBtn.addEventListener("click", () => {
+    state.manualFoundations.drawingMode = !state.manualFoundations.drawingMode;
+    state.manualFoundations.drawPreviewTiles = [];
+    state.manualFoundations.drawStartWorld = null;
+
+    if (state.manualFoundations.drawingMode) {
+      clearSelection();
+      state.dragMode = null;
+      state.marqueeRect = null;
+      state.machineDragOffsets = [];
+      state.isDragging = false;
+      updateSelectedInfo();
+    }
+
+    updateManualFoundationControls();
+    draw();
+  });
+
+  rotateFoundationBtn.addEventListener("click", () => {
+    state.manualFoundations.rotation = normalizeDegrees(
+      state.manualFoundations.rotation + FOUNDATION_ROTATION_STEP
+    );
+
+    if (state.manualFoundations.hoverTile) {
+      state.manualFoundations.hoverTile.rotation = state.manualFoundations.rotation;
+    }
+
+    updateManualFoundationControls();
+    draw();
+  });
+
+  if (clearManualFoundationsBtn) {
+    clearManualFoundationsBtn.addEventListener("click", () => {
+      state.manualFoundations.tiles = [];
+      state.manualFoundations.drawPreviewTiles = [];
+      state.manualFoundations.drawStartWorld = null;
+      draw();
+    });
+  }
+
+  updateManualFoundationControls();
+}
+
 loadMachineCatalog().then(() => {
   setupAutoFoundationToggle();
+  setupManualFoundationControls();
   renderRecipePalette();
   resizeCanvas();
   updateSelectedInfo();
