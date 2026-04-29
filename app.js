@@ -717,6 +717,7 @@ const state = {
     drawingMode: false,
     rotation: 0,
     tiles: [],
+    selectedTileIds: [],
     hoverTile: null,
     drawStartWorld: null,
     drawPreviewTiles: [],
@@ -1330,10 +1331,10 @@ function buildManualFoundationPreview(
     }];
   }
 
-  // Rectangle mode stays axis-based.
-  if (fillArea) {
-    const { dir, perp } = getFoundationDrawAxes();
+  const { dir, perp } = getFoundationDrawAxes();
 
+  // Rectangle mode: fill an oriented rectangle based on the current foundation angle.
+  if (fillArea) {
     const primaryDistance = delta.x * dir.x + delta.y * dir.y;
     const secondaryDistance = delta.x * perp.x + delta.y * perp.y;
 
@@ -1427,44 +1428,71 @@ function buildManualFoundationPreview(
     return tiles;
   }
 
-  // Normal line mode: straight end-to-end rows only.
-  let dir;
-  let perp;
+  // Normal line mode:
+  // Use the current foundation rotation as the line direction.
+  // If the drag is closer to the foundation's perpendicular axis, use that instead.
+  // This allows proper end-to-end diagonal rows at 5°, 40°, 45°, etc.
+  const dirProjection = delta.x * dir.x + delta.y * dir.y;
+  const perpProjection = delta.x * perp.x + delta.y * perp.y;
 
-  if (Math.abs(delta.x) >= Math.abs(delta.y)) {
-    dir = { x: delta.x >= 0 ? 1 : -1, y: 0 };
-    perp = { x: 0, y: 1 };
-  } else {
-    dir = { x: 0, y: delta.y >= 0 ? 1 : -1 };
-    perp = { x: 1, y: 0 };
-  }
+  const usePerpAxis = Math.abs(perpProjection) > Math.abs(dirProjection);
 
-  const primaryDistance = delta.x * dir.x + delta.y * dir.y;
-  const secondaryDistance = delta.x * perp.x + delta.y * perp.y;
+  const lineAxis = usePerpAxis ? perp : dir;
+  const lineDistance = usePerpAxis ? perpProjection : dirProjection;
+  const lineSign = lineDistance >= 0 ? 1 : -1;
 
-  const primaryCount = Math.floor(Math.abs(primaryDistance) / FOUNDATION_SIZE) + 1;
-  const secondaryCount = 1;
-  const secondarySign = secondaryDistance >= 0 ? 1 : -1;
-
+  const tileCount = Math.floor(Math.abs(lineDistance) / FOUNDATION_SIZE) + 1;
   const tiles = [];
 
-  for (let i = 0; i < primaryCount; i++) {
-    for (let j = 0; j < secondaryCount; j++) {
-      tiles.push({
-        centerX:
-          startWorld.x +
-          dir.x * FOUNDATION_SIZE * i +
-          perp.x * FOUNDATION_SIZE * j * secondarySign,
-        centerY:
-          startWorld.y +
-          dir.y * FOUNDATION_SIZE * i +
-          perp.y * FOUNDATION_SIZE * j * secondarySign,
-        rotation: state.manualFoundations.rotation
-      });
-    }
+  for (let i = 0; i < tileCount; i++) {
+    tiles.push({
+      centerX: startWorld.x + lineAxis.x * FOUNDATION_SIZE * i * lineSign,
+      centerY: startWorld.y + lineAxis.y * FOUNDATION_SIZE * i * lineSign,
+      rotation: state.manualFoundations.rotation
+    });
   }
 
   return tiles;
+}
+
+function getManualFoundationTileCorners(tile) {
+  const half = FOUNDATION_SIZE / 2;
+  const center = {
+    x: tile.centerX,
+    y: tile.centerY
+  };
+
+  const corners = [
+    { x: center.x - half, y: center.y - half },
+    { x: center.x + half, y: center.y - half },
+    { x: center.x + half, y: center.y + half },
+    { x: center.x - half, y: center.y + half }
+  ];
+
+  return corners.map(point =>
+    rotatePointAround(point, center, normalizeDegrees(tile.rotation || 0))
+  );
+}
+
+function getManualFoundationTileBounds(tile) {
+  return getAxisAlignedBoundsFromCorners(getManualFoundationTileCorners(tile));
+}
+
+function manualFoundationIntersectsWorldRect(tile, worldRect) {
+  const bounds = getManualFoundationTileBounds(tile);
+  return rectanglesOverlap(bounds, worldRect);
+}
+
+function isManualFoundationSelected(tileId) {
+  return state.manualFoundations.selectedTileIds.includes(tileId);
+}
+
+function clearManualFoundationSelection() {
+  state.manualFoundations.selectedTileIds = [];
+}
+
+function setManualFoundationSelection(ids) {
+  state.manualFoundations.selectedTileIds = [...ids];
 }
 
 function drawManualFoundations() {
@@ -1477,6 +1505,26 @@ function drawManualFoundations() {
       FOUNDATION_SIZE,
       tile.rotation
     );
+
+    if (isManualFoundationSelected(tile.id)) {
+      const centerScreen = worldToScreen(tile.centerX, tile.centerY);
+      const sizePx = FOUNDATION_SIZE * state.camera.zoom;
+
+      ctx.save();
+      ctx.translate(centerScreen.x, centerScreen.y);
+      ctx.rotate(degreesToRadians(tile.rotation || 0));
+
+      ctx.strokeStyle = "#ffd866";
+      ctx.lineWidth = 3;
+      ctx.strokeRect(
+        -sizePx / 2,
+        -sizePx / 2,
+        sizePx,
+        sizePx
+      );
+
+      ctx.restore();
+    }
   }
 
   if (state.manualFoundations.drawPreviewTiles.length > 0) {
@@ -3228,40 +3276,70 @@ function escapeHtml(str) {
 }
 
 function deleteSelectedMachines() {
-  if (state.selectedMachineIds.length === 0) return;
+  const selectedMachineIds = [...state.selectedMachineIds];
+  const selectedFoundationIds = [...state.manualFoundations.selectedTileIds];
 
-  const selectedMachines = getSelectedMachines();
-  const deletedCount = selectedMachines.length;
-  const recipeNames = [...new Set(
-    selectedMachines
-      .map(machine => machine.recipeName)
-      .filter(Boolean)
-  )];
+  if (selectedMachineIds.length === 0 && selectedFoundationIds.length === 0) {
+    return;
+  }
 
-  logPlannerEvent("manual_machine_delete", {
-    machine_count: deletedCount,
-    recipe_count: recipeNames.length,
-    recipes: recipeNames.slice(0, 10).join(", ")
-  });
+  if (selectedMachineIds.length > 0) {
+    const selectedMachines = getSelectedMachines();
+    const deletedCount = selectedMachines.length;
+    const recipeNames = [...new Set(
+      selectedMachines
+        .map(machine => machine.recipeName)
+        .filter(Boolean)
+    )];
 
-  state.machines = state.machines.filter(
-    machine => !state.selectedMachineIds.includes(machine.id)
-  );
+    logPlannerEvent("manual_machine_delete", {
+      machine_count: deletedCount,
+      recipe_count: recipeNames.length,
+      recipes: recipeNames.slice(0, 10).join(", ")
+    });
+
+    state.machines = state.machines.filter(
+      machine => !selectedMachineIds.includes(machine.id)
+    );
+  }
+
+  if (selectedFoundationIds.length > 0) {
+    logPlannerEvent("manual_foundation_delete", {
+      foundation_count: selectedFoundationIds.length
+    });
+
+    state.manualFoundations.tiles = state.manualFoundations.tiles.filter(
+      tile => !selectedFoundationIds.includes(tile.id)
+    );
+  }
 
   clearSelection();
+  clearManualFoundationSelection();
   updateSelectedInfo();
   draw();
 }
 
 canvas.addEventListener("contextmenu", event => {
   event.preventDefault();
+  event.stopPropagation();
+  return false;
 });
 
-if (exportSummaryPdfBtn) {
-  exportSummaryPdfBtn.addEventListener("click", () => {
-    exportSummaryPdf();
-  });
-}
+window.addEventListener(
+  "contextmenu",
+  event => {
+    const path = event.composedPath ? event.composedPath() : [];
+
+    if (event.target === canvas || path.includes(canvas)) {
+      event.preventDefault();
+      event.stopPropagation();
+      return false;
+    }
+
+    return true;
+  },
+  { capture: true }
+);
 
 canvas.addEventListener(
   "wheel",
@@ -3295,6 +3373,11 @@ canvas.addEventListener(
 );
 
 canvas.addEventListener("mousedown", event => {
+  if (event.button === 1 || event.button === 2) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
   const rect = canvas.getBoundingClientRect();
   const mouseX = event.clientX - rect.left;
   const mouseY = event.clientY - rect.top;
@@ -3307,6 +3390,22 @@ canvas.addEventListener("mousedown", event => {
   if (event.button === 1) {
     state.dragMode = "pan";
     state.isDragging = false;
+    return;
+  }
+
+  // If left-drag foundation drawing is already active, pressing right mouse
+  // should upgrade the current draw into fill-area mode instead of starting marquee.
+  if (event.button === 2 && state.dragMode === "foundation-draw") {
+    const fillArea = Boolean((event.buttons & 1) && (event.buttons & 2));
+
+    state.manualFoundations.drawPreviewTiles = buildManualFoundationPreview(
+      state.manualFoundations.drawStartWorld,
+      worldPoint,
+      fillArea,
+      false
+    );
+
+    draw();
     return;
   }
 
@@ -3323,6 +3422,8 @@ canvas.addEventListener("mousedown", event => {
   }
 
   if (event.button === 0 && hitMachine) {
+    clearManualFoundationSelection();
+
     if (!isMachineSelected(hitMachine.id)) {
       setSelection([hitMachine.id]);
     }
@@ -3346,6 +3447,9 @@ canvas.addEventListener("mousedown", event => {
   }
 
   if (event.button === 0 && state.manualFoundations.drawingMode && !hitMachine) {
+    clearSelection();
+    clearManualFoundationSelection();
+
     const snappedStart = getSnappedFoundationStart(worldPoint);
 
     state.dragMode = "foundation-draw";
@@ -3362,12 +3466,14 @@ canvas.addEventListener("mousedown", event => {
       false
     );
 
+    updateSelectedInfo();
     draw();
     return;
   }
 
   if (event.button === 0) {
     clearSelection();
+    clearManualFoundationSelection();
     updateSelectedInfo();
     state.dragMode = "pan";
     state.isDragging = false;
@@ -3544,17 +3650,26 @@ window.addEventListener("mouseup", () => {
 
   if (state.dragMode === "marquee" && state.marqueeRect) {
     const worldRect = screenRectToWorldRect(state.marqueeRect);
-    const hits = state.machines
+
+    const machineHits = state.machines
       .filter(machine => machineIntersectsWorldRect(machine, worldRect))
       .map(machine => machine.id);
 
-    setSelection(hits);
+    const foundationHits = state.manualFoundations.tiles
+      .filter(tile => manualFoundationIntersectsWorldRect(tile, worldRect))
+      .map(tile => tile.id);
+
+    setSelection(machineHits);
+    setManualFoundationSelection(foundationHits);
+
     state.marqueeRect = null;
     updateSelectedInfo();
     draw();
 
     logPlannerEvent("selection_marquee", {
-      selected_count: hits.length
+      selected_count: machineHits.length + foundationHits.length,
+      selected_machines: machineHits.length,
+      selected_foundations: foundationHits.length
     });
 
     state.dragMode = null;
@@ -3595,18 +3710,6 @@ window.addEventListener("mouseup", () => {
   state.marqueeRect = null;
   state.machineDragOffsets = [];
   state.isDragging = false;
-});
-
-let lastPointerClientPosition = {
-  x: window.innerWidth / 2,
-  y: window.innerHeight / 2
-};
-
-window.addEventListener("mousemove", event => {
-  lastPointerClientPosition = {
-    x: event.clientX,
-    y: event.clientY
-  };
 });
 
 function showPlannerToast(message, clientX = null, clientY = null) {
@@ -3665,26 +3768,50 @@ function showPlannerToast(message, clientX = null, clientY = null) {
 window.addEventListener("keydown", event => {
   const isMac = navigator.platform.toUpperCase().includes("MAC");
   const modKey = isMac ? event.metaKey : event.ctrlKey;
+  const key = event.key.toLowerCase();
 
-  if (modKey && event.key.toLowerCase() === "c") {
+  // Let browser/system refresh shortcuts work.
+  if (event.key === "F5" || (modKey && key === "r")) {
+    return;
+  }
+
+  if (modKey && key === "c") {
     event.preventDefault();
     copySelectedMachines();
     return;
   }
 
-  if (modKey && event.key.toLowerCase() === "x") {
+  if (modKey && key === "x") {
     event.preventDefault();
     cutSelectedMachines();
     return;
   }
 
-  if (modKey && event.key.toLowerCase() === "v") {
+  if (modKey && key === "v") {
     event.preventDefault();
     pasteClipboard();
     return;
   }
 
-  if (event.key.toLowerCase() === "r" && state.manualFoundations.drawingMode) {
+  const selectedMachines = getSelectedMachines();
+  const selectedFoundationIds = state.manualFoundations?.selectedTileIds || [];
+  const hasSelectedMachines = selectedMachines.length > 0;
+  const hasSelectedFoundations = selectedFoundationIds.length > 0;
+
+  // Delete should work for machines, foundations, or both.
+  // Put this BEFORE the selected-machines early return.
+  if (event.key === "Delete" || event.key === "Backspace") {
+    if (hasSelectedMachines || hasSelectedFoundations) {
+      event.preventDefault();
+      deleteSelectedMachines();
+    }
+
+    return;
+  }
+
+  // When foundation drawing is on, plain R rotates the foundation placement.
+  // Ctrl+R / Ctrl+Shift+R already returned above, so browser refresh is safe.
+  if (key === "r" && state.manualFoundations.drawingMode) {
     event.preventDefault();
 
     state.manualFoundations.rotation = normalizeDegrees(
@@ -3708,19 +3835,20 @@ window.addEventListener("keydown", event => {
     return;
   }
 
-  const selected = getSelectedMachines();
+  // From here down, we only care about selected machines.
+  if (!hasSelectedMachines) {
+    return;
+  }
 
-  if (selected.length === 0) return;
-
-  if (event.key.toLowerCase() === "r") {
+  if (key === "r") {
     event.preventDefault();
 
-    const ignoreIds = selected.map(machine => machine.id);
-    const proposals = buildGroupRotationProposals(selected, MACHINE_ROTATION_STEP);
+    const ignoreIds = selectedMachines.map(machine => machine.id);
+    const proposals = buildGroupRotationProposals(selectedMachines, MACHINE_ROTATION_STEP);
 
     if (!canApplyMachineProposals(proposals, ignoreIds)) {
       logPlannerEvent("manual_machine_rotate_blocked", {
-        machine_count: selected.length,
+        machine_count: selectedMachines.length,
         rotation_step: MACHINE_ROTATION_STEP
       });
 
@@ -3738,13 +3866,13 @@ window.addEventListener("keydown", event => {
     }
 
     const recipeNames = [...new Set(
-      selected
+      selectedMachines
         .map(machine => machine.recipeName)
         .filter(Boolean)
     )];
 
     logPlannerEvent("manual_machine_rotate", {
-      machine_count: selected.length,
+      machine_count: selectedMachines.length,
       rotation_step: MACHINE_ROTATION_STEP,
       recipe_count: recipeNames.length,
       recipes: recipeNames.slice(0, 10).join(", ")
@@ -3754,11 +3882,6 @@ window.addEventListener("keydown", event => {
     draw();
     return;
   }
-
-  if (event.key === "Delete" || event.key === "Backspace") {
-    event.preventDefault();
-    deleteSelectedMachines();
-  }
 });
 
 window.getPlannerState = function () {
@@ -3766,6 +3889,7 @@ window.getPlannerState = function () {
     camera: state.camera,
     machines: state.machines,
     selectedMachineIds: state.selectedMachineIds,
+    manualFoundations: state.manualFoundations,
     clipboard: state.clipboard,
     viewMode: state.viewMode,
     lastImportedRows: state.lastImportedRows
