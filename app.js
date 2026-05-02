@@ -94,6 +94,7 @@ const MACHINE_FOOTPRINTS = {
   "Resource Well Extractor": { width: 8, length: 8 },
   "Quantum Encoder": { width: 24, length: 20 },
   "Converter": { width: 16, length: 16 },
+  "Biomass Burner": { width: 8, length: 8 },
   "Space Elevator": { width: 40, length: 40 },
   "Nuclear Power Plant": { width: 36, length: 43 },
 };
@@ -323,7 +324,11 @@ function routeDemandToNode(nodes, nodeIndex, partName, ppm, visiting = new Set()
   }
 
   const visitKey = `${nodeIndex}|${partName || ""}`;
+
   if (visiting.has(visitKey)) {
+    nodeState.warnings.push(
+      `Cycle stopped while routing demand for "${partName || "unknown part"}"`
+    );
     return;
   }
 
@@ -338,7 +343,7 @@ function routeDemandToNode(nodes, nodeIndex, partName, ppm, visiting = new Set()
     }
 
     if (demandedPart) {
-      addDemandToNode(nodes, nodeIndex, demandedPart, ppm);
+      addDemandToNode(nodes, nodeIndex, demandedPart, ppm, visiting);
     }
 
     visiting.delete(visitKey);
@@ -367,12 +372,23 @@ function routeDemandToNode(nodes, nodeIndex, partName, ppm, visiting = new Set()
   visiting.delete(visitKey);
 }
 
-function addDemandToNode(nodes, nodeIndex, partName, ppm) {
+function addDemandToNode(nodes, nodeIndex, partName, ppm, visiting = new Set()) {
   const nodeState = nodes[nodeIndex];
 
   if (!nodeState || !nodeState.recipe) {
     return;
   }
+
+  const visitKey = `${nodeIndex}|${partName || ""}|recipe`;
+
+  if (visiting.has(visitKey)) {
+    nodeState.warnings.push(
+      `Cycle stopped while adding demand for "${partName || "unknown part"}"`
+    );
+    return;
+  }
+
+  visiting.add(visitKey);
 
   nodeState.outputDemands[partName] =
     (nodeState.outputDemands[partName] || 0) + ppm;
@@ -381,6 +397,7 @@ function addDemandToNode(nodes, nodeIndex, partName, ppm) {
 
   if (!outputRate || outputRate <= 0) {
     nodeState.warnings.push(`No output rate found for part "${partName}"`);
+    visiting.delete(visitKey);
     return;
   }
 
@@ -388,6 +405,7 @@ function addDemandToNode(nodes, nodeIndex, partName, ppm) {
   const previousMachineCount = nodeState.machineCountExact;
 
   if (requiredMachineCount <= previousMachineCount + 1e-9) {
+    visiting.delete(visitKey);
     return;
   }
 
@@ -409,10 +427,13 @@ function addDemandToNode(nodes, nodeIndex, partName, ppm) {
         nodes,
         ref.index,
         ref.part || inputPart,
-        splitDemand
+        splitDemand,
+        visiting
       );
     }
   }
+
+  visiting.delete(visitKey);
 }
 
 function getInputRefsForPart(inputs, partName = null) {
@@ -807,7 +828,20 @@ function snapPosition(x, y) {
 }
 
 function getMachineDefinition(type) {
-  return machineCatalog[type] || null;
+  if (machineCatalog[type]) {
+    return machineCatalog[type];
+  }
+
+  const footprint = MACHINE_FOOTPRINTS[type];
+  if (!footprint) {
+    return null;
+  }
+
+  return {
+    width: footprint.width,
+    length: footprint.length,
+    color: "#4f9cff"
+  };
 }
 
 function getMachineById(id) {
@@ -2343,87 +2377,7 @@ function findOpenClusterPlacement(row, originX, originY, blockIndex, extraMachin
   return null;
 }
 
-function importMachineClusters(rows) {
-  const rect = canvas.getBoundingClientRect();
-  const centerWorld = screenToWorld(rect.width / 2, rect.height / 2);
 
-  const importedMachines = [];
-  state.machines = [];
-
-  let cursorX = snap(centerWorld.x);
-  let cursorY = snap(centerWorld.y);
-  let currentRowHeight = 0;
-
-  const gap = 8;
-  const maxRowWidth = 260;
-  const maxRowAttempts = Math.max(rows.length * 8, 100);
-
-  for (let i = 0; i < rows.length; i++) {
-    const row = rows[i];
-    if (!row.block || !row.machineName || !row.recipeName) continue;
-
-    let placedCluster = null;
-    let attempts = 0;
-
-    while (!placedCluster && attempts < maxRowAttempts) {
-      const estimatedBlockWidth = row.block.width;
-      const estimatedBlockHeight = row.block.length;
-
-      if (cursorX + estimatedBlockWidth > centerWorld.x + maxRowWidth) {
-        cursorX = snap(centerWorld.x);
-        cursorY = snap(cursorY + currentRowHeight + gap);
-        currentRowHeight = 0;
-      }
-
-      const candidateCluster = findOpenClusterPlacement(
-        row,
-        cursorX,
-        cursorY,
-        i,
-        importedMachines,
-        240
-      );
-
-      if (candidateCluster && candidateCluster.length > 0) {
-        placedCluster = candidateCluster;
-        break;
-      }
-
-      cursorX = snap(centerWorld.x);
-      cursorY = snap(cursorY + Math.max(currentRowHeight, estimatedBlockHeight) + gap);
-      currentRowHeight = 0;
-      attempts += 1;
-    }
-
-    if (!placedCluster) {
-      console.warn("Failed to place cluster without overlap:", row.recipeName);
-      continue;
-    }
-
-    const clusterBounds = getClusterBounds(placedCluster);
-    if (!clusterBounds) {
-      console.warn("Failed to compute cluster bounds:", row.recipeName);
-      continue;
-    }
-
-    importedMachines.push(...placedCluster);
-
-    cursorX = snap(clusterBounds.right + gap);
-    currentRowHeight = Math.max(currentRowHeight, clusterBounds.length);
-  }
-
-  if (importedMachines.length === 0) {
-    throw new Error("No valid machine clusters were imported.");
-  }
-
-  state.machines.push(...importedMachines);
-
-  clearSelection();
-  setSelection(importedMachines.map(m => m.id));
-
-  updateSelectedInfo();
-  draw();
-}
 function importMachineClusters(rows) {
   const rect = canvas.getBoundingClientRect();
   const centerWorld = screenToWorld(rect.width / 2, rect.height / 2);
