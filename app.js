@@ -1871,18 +1871,32 @@ plannerViewBtn.addEventListener("click", () => {
 
 summaryViewBtn.addEventListener("click", () => {
   state.viewMode = "summary";
+  updateViewModeUI();
+
+  const selected = getSelectedMachines();
+  const selectedRows = selected.length > 0
+    ? buildSummaryRowsFromMachines(selected)
+    : [];
 
   logPlannerEvent("summary_view_open", {
     has_imported_rows: Boolean(state.lastImportedRows && state.lastImportedRows.length > 0),
     recipe_blocks: state.lastImportedRows ? state.lastImportedRows.length : 0,
-    machine_count: state.machines.length
+    machine_count: state.machines.length,
+    selected_machine_count: selected.length,
+    using_selected_summary: selected.length > 0
   });
 
-  updateViewModeUI();
+  if (selectedRows.length > 0) {
+    renderSummaryView(selectedRows);
+    return;
+  }
 
   if (state.lastImportedRows && state.lastImportedRows.length > 0) {
     renderSummaryView(state.lastImportedRows);
+    return;
   }
+
+  renderSummaryView([]);
 });
 
 async function readJsonFile(file) {
@@ -2174,6 +2188,74 @@ function drawSummaryPreview(rows) {
     x += item.itemWidth + itemGapPx;
     currentRowHeight = Math.max(currentRowHeight, item.itemHeight);
   }
+}
+
+function getActualBlockFromMachines(machines) {
+  const bounds = getClusterBounds(machines);
+
+  if (!bounds) {
+    return {
+      rows: 1,
+      cols: machines.length,
+      width: 0,
+      length: 0
+    };
+  }
+
+  const uniqueX = [...new Set(machines.map(machine => machine.x.toFixed(2)))];
+  const uniqueY = [...new Set(machines.map(machine => machine.y.toFixed(2)))];
+
+  return {
+    rows: uniqueY.length,
+    cols: uniqueX.length,
+    width: bounds.width,
+    length: bounds.length
+  };
+}
+
+function buildSummaryRowsFromMachines(machines) {
+  const grouped = new Map();
+
+  for (const machine of machines) {
+    const recipeName = machine.recipeName || machine.type;
+    const machineName = machine.blockMachineType || machine.type;
+    const key = `${recipeName}__${machineName}`;
+
+    if (!grouped.has(key)) {
+      grouped.set(key, {
+        recipeName,
+        machineName,
+        machines: []
+      });
+    }
+
+    grouped.get(key).machines.push(machine);
+  }
+
+  return Array.from(grouped.values())
+    .map(group => {
+      const roundedMachines = group.machines.length;
+      const exactMachines = roundedMachines;
+      const footprint = getParserFootprint(group.machineName);
+      const block = getActualBlockFromMachines(group.machines);
+
+      return {
+        recipeName: group.recipeName,
+        machineName: group.machineName,
+        exactMachines,
+        roundedMachines,
+        footprint,
+        block,
+        warnings: []
+      };
+    })
+    .sort((a, b) => {
+      if (a.roundedMachines !== b.roundedMachines) {
+        return b.roundedMachines - a.roundedMachines;
+      }
+
+      return a.recipeName.localeCompare(b.recipeName);
+    });
 }
 
 function renderSummaryView(rows) {
